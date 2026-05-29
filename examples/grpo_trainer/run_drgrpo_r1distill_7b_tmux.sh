@@ -45,7 +45,7 @@ PROJ_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 SCRIPT_NAME=$(basename "$0")
 
 # ===== defaults =====
-MODEL_PATH="${MODEL_PATH:-deepseek-ai/DeepSeek-R1-Distill-Qwen-7B}"   # HF repo name → auto-download (or pass --model /local/path)
+MODEL_PATH="${MODEL_PATH:-/code-fsx/hongpaul-sandbox/code/temp/DeepSeek-R1-Distill-Qwen-7B}"   # local pre-downloaded weights on server
 MODEL_TAG="${MODEL_TAG:-DeepSeek-R1-Distill-Qwen-7B}"
 GPUS="${GPUS:-0,1,2,3,4,5,6,7}"   # 8x B200 server
 DATA_DIR="${DATA_DIR:-$PROJ_DIR/data/math_drgrpo_lvl3to5}"   # paper 7B SOTA recipe
