@@ -112,7 +112,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars (LR, EPOCHS) into the inner tmux shell so
     # `LR=1e-6 bash run...sh` works (tmux doesn't inherit outer env by default).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -141,14 +141,14 @@ export HF_HOME="${HF_HOME:-/code/hongpaul-sandbox/temp/OPT-RL/hf_cache}"   # sha
 
 # ===== Dr. GRPO hyperparams (paper Table 6) =====
 LR="${LR:-5e-6}"         # paper Table 6 uses 1e-6 constant; default 5e-6, override with LR=...
-ROLLOUT_N=8              # paper Table 6: 8 responses per question
+ROLLOUT_N="${ROLLOUT_N:-8}"              # paper Table 6: 8 responses per question
 MAX_RESPONSE=3000        # paper: 3000
 MAX_PROMPT=1024          # MATH questions are short (<512 typically)
 CLIP_RATIO=0.2           # paper: 0.2 (symmetric)
 PPO_INNER_EPOCH=1        # paper: inner proximal update epoch = 1
-BATCH_SIZE=128           # data.train_batch_size (prompts) - paper/official
-MINI_BATCH=128           # = BATCH_SIZE (single update per step, inner_epoch=1)
-MICRO_BATCH=8            # sequences per GPU per backward pass
+BATCH_SIZE="${BATCH_SIZE:-128}"           # data.train_batch_size (prompts) - paper/official
+MINI_BATCH="${MINI_BATCH:-$BATCH_SIZE}"           # = BATCH_SIZE (single update per step, inner_epoch=1)
+MICRO_BATCH="${MICRO_BATCH:-8}"            # sequences per GPU per backward pass
 EPOCHS="${EPOCHS:-5}"    # paper official num_prompt_epoch=20; 5 = full run (~465 steps)
 
 STEPS_PER_EPOCH=$($PYTHON_BIN -c "import pandas as pd; print(max(1, len(pd.read_parquet('$TRAIN_FILE')) // $BATCH_SIZE))")

@@ -116,7 +116,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars (LR, EPOCHS) into the inner tmux shell so
     # `LR=1e-6 bash run...sh` works (tmux doesn't inherit outer env by default).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -145,14 +145,14 @@ export HF_HOME="${HF_HOME:-/code/hongpaul-sandbox/temp/OPT-RL/hf_cache}"   # sha
 
 # ===== Dr. GRPO hyperparams (paper Table 6) =====
 LR="${LR:-1e-6}"         # paper Table 6: 1e-6 constant; safer for R1-Distill (already SFT'd)
-ROLLOUT_N=8              # paper Table 6: 8 responses per question
+ROLLOUT_N="${ROLLOUT_N:-8}"   # paper Table 6: 8 responses per question
 MAX_RESPONSE=16000       # R1-Distill needs long reasoning; default 3k clipped >50%
 MAX_PROMPT=1024          # MATH questions are short (<512 typically)
 CLIP_RATIO=0.2           # paper: 0.2 (symmetric)
 PPO_INNER_EPOCH=1        # paper: inner proximal update epoch = 1
-BATCH_SIZE=128           # data.train_batch_size (prompts) - paper/official
-MINI_BATCH=128           # = BATCH_SIZE (single update per step, inner_epoch=1)
-MICRO_BATCH=4            # 7B + 16K seq: keep micro modest (8 may OOM); B200 192GB still has headroom
+BATCH_SIZE="${BATCH_SIZE:-128}"     # data.train_batch_size (prompts) — paper/official; bump for more parallel rollout work
+MINI_BATCH="${MINI_BATCH:-$BATCH_SIZE}"   # default = BATCH_SIZE (single mini-batch = single update per step, inner_epoch=1)
+MICRO_BATCH="${MICRO_BATCH:-4}"     # 7B + 16K seq: keep ≤4 on B200 (each +1 ~doubles activations, OOM risk)
 EPOCHS="${EPOCHS:-5}"    # paper official num_prompt_epoch=20; 5 = ~218 steps/epoch × 5 = 1090 steps
 
 STEPS_PER_EPOCH=$($PYTHON_BIN -c "import pandas as pd; print(max(1, len(pd.read_parquet('$TRAIN_FILE')) // $BATCH_SIZE))")
