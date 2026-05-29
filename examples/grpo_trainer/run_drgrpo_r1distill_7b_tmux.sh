@@ -116,7 +116,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars (LR, EPOCHS) into the inner tmux shell so
     # `LR=1e-6 bash run...sh` works (tmux doesn't inherit outer env by default).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -150,9 +150,10 @@ MAX_RESPONSE=16000       # R1-Distill needs long reasoning; default 3k clipped >
 MAX_PROMPT=1024          # MATH questions are short (<512 typically)
 CLIP_RATIO=0.2           # paper: 0.2 (symmetric)
 PPO_INNER_EPOCH=1        # paper: inner proximal update epoch = 1
-BATCH_SIZE="${BATCH_SIZE:-128}"     # data.train_batch_size (prompts) — paper/official; bump for more parallel rollout work
+BATCH_SIZE="${BATCH_SIZE:-256}"     # data.train_batch_size (prompts); 256 saturates 8x B200 well
 MINI_BATCH="${MINI_BATCH:-$BATCH_SIZE}"   # default = BATCH_SIZE (single mini-batch = single update per step, inner_epoch=1)
-MICRO_BATCH="${MICRO_BATCH:-4}"     # 7B + 16K seq: keep ≤4 on B200 (each +1 ~doubles activations, OOM risk)
+MICRO_BATCH="${MICRO_BATCH:-8}"     # 7B + 16K seq @ 8x B200: 8 fits in ~180 GB with ~60 GB headroom
+LOG_PROB_MICRO_BATCH="${LOG_PROB_MICRO_BATCH:-32}"   # forward-only (no grad) — can be larger than MICRO_BATCH
 EPOCHS="${EPOCHS:-5}"    # paper official num_prompt_epoch=20; 5 = ~218 steps/epoch × 5 = 1090 steps
 
 STEPS_PER_EPOCH=$($PYTHON_BIN -c "import pandas as pd; print(max(1, len(pd.read_parquet('$TRAIN_FILE')) // $BATCH_SIZE))")
@@ -253,9 +254,9 @@ EOF
         actor_rollout_ref.rollout.val_kwargs.top_p=1.0 \
         actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
         actor_rollout_ref.rollout.val_kwargs.n=1 \
-        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=16 \
+        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=$LOG_PROB_MICRO_BATCH \
         actor_rollout_ref.ref.fsdp_config.param_offload=False \
-        actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
+        actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=$LOG_PROB_MICRO_BATCH \
         trainer.critic_warmup=0 \
         trainer.logger='["console","wandb"]' \
         trainer.project_name="$WANDB_PROJECT" \
