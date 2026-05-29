@@ -152,7 +152,7 @@ CLIP_RATIO=0.2           # paper: 0.2 (symmetric)
 PPO_INNER_EPOCH=1        # paper: inner proximal update epoch = 1
 BATCH_SIZE="${BATCH_SIZE:-256}"     # data.train_batch_size (prompts); 256 saturates 8x B200 well
 MINI_BATCH="${MINI_BATCH:-$BATCH_SIZE}"   # default = BATCH_SIZE (single mini-batch = single update per step, inner_epoch=1)
-MICRO_BATCH="${MICRO_BATCH:-8}"     # 7B + 16K seq @ 8x B200: 8 fits in ~180 GB with ~60 GB headroom
+MICRO_BATCH="${MICRO_BATCH:-4}"     # 7B + 16K seq: 4 is safe; 8 OOM'd on B200 (activations roughly double per step)
 LOG_PROB_MICRO_BATCH="${LOG_PROB_MICRO_BATCH:-32}"   # forward-only (no grad) — can be larger than MICRO_BATCH
 EPOCHS="${EPOCHS:-5}"    # paper official num_prompt_epoch=20; 5 = ~218 steps/epoch × 5 = 1090 steps
 
