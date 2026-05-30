@@ -7,7 +7,15 @@ set -euo pipefail
 
 CKPT="${1:?need ckpt path (the dir containing config.json)}"
 TAG="${2:-$(basename $(dirname $(dirname "$CKPT")))}"   # exp name
-N_GPU="${N_GPU:-8}"
+# GPU_LIST overrides N_GPU: "2,3,6,7" -> 4 shards on those GPUs.
+# N_GPU alone defaults to "0,1,...,N_GPU-1".
+if [ -n "${GPU_LIST:-}" ]; then
+    IFS=',' read -r -a GPU_ARR <<< "$GPU_LIST"
+else
+    N_GPU="${N_GPU:-8}"
+    GPU_ARR=($(seq 0 $((N_GPU - 1))))
+fi
+N_SHARD=${#GPU_ARR[@]}
 TEMPLATE="${TEMPLATE:-r1d}"
 MAX_TOKENS="${MAX_TOKENS:-32000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-34816}"
@@ -19,12 +27,13 @@ mkdir -p "${SAVE_DIR}"
 LOG_DIR="${SAVE_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 
-echo "[DP-${N_GPU}] eval $CKPT"
-echo "  tag=$TAG  template=$TEMPLATE  max_tokens=$MAX_TOKENS  save=$SAVE_DIR"
+echo "[DP-${N_SHARD}] eval $CKPT"
+echo "  tag=$TAG  template=$TEMPLATE  max_tokens=$MAX_TOKENS  gpus=${GPU_ARR[*]}  save=$SAVE_DIR"
 
 PIDS=()
-for i in $(seq 0 $((N_GPU - 1))); do
-    CUDA_VISIBLE_DEVICES=$i \
+for i in $(seq 0 $((N_SHARD - 1))); do
+    GPU_ID="${GPU_ARR[$i]}"
+    CUDA_VISIBLE_DEVICES=$GPU_ID \
     VLLM_USE_FLASHINFER_SAMPLER=0 \
     nohup "$PY" examples/eval/evaluate_model.py \
         --model_name "$CKPT" \
@@ -36,14 +45,14 @@ for i in $(seq 0 $((N_GPU - 1))); do
         --n_samples 1 \
         --tensor_parallel_size 1 \
         --gpu_memory_utilization 0.85 \
-        --shard "${i}/${N_GPU}" \
+        --shard "${i}/${N_SHARD}" \
         --save_dir "$SAVE_DIR" \
-        > "${LOG_DIR}/shard${i}.log" 2>&1 &
+        > "${LOG_DIR}/shard${i}_gpu${GPU_ID}.log" 2>&1 &
     PIDS+=($!)
-    echo "  GPU $i pid=${PIDS[-1]}"
+    echo "  shard ${i} on GPU ${GPU_ID}  pid=${PIDS[-1]}"
 done
 
-echo "[wait] all ${N_GPU} shards running, monitoring..."
+echo "[wait] all ${N_SHARD} shards running, monitoring..."
 FAIL=0
 for pid in "${PIDS[@]}"; do
     wait "$pid" || FAIL=$((FAIL + 1))
