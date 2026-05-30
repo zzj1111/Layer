@@ -81,6 +81,10 @@ def main(
     n_samples: int = 1,
     max_test: int = 999999,
     save: bool = False,
+    tensor_parallel_size: int = 1,
+    gpu_memory_utilization: float = 0.9,
+    shard: str = "0/1",  # "i/N" -> this proc handles every N-th prompt starting at offset i
+    save_dir: str = "/tmp/eval_results",
 ):
 
     sampling_params = vllm.SamplingParams(
@@ -98,7 +102,12 @@ def main(
         max_model_len=max_model_len,
         dtype="bfloat16",
         enable_prefix_caching=True,
+        tensor_parallel_size=tensor_parallel_size,
+        gpu_memory_utilization=gpu_memory_utilization,
     )
+
+    shard_idx, shard_total = (int(x) for x in shard.split("/"))
+    assert 0 <= shard_idx < shard_total, f"bad shard {shard}"
 
     if "prime" in model_name.lower():
         template = "prime-zero"
@@ -181,11 +190,16 @@ def main(
     max_lens = {}
     formatted = {}
     to_be_saved = []
+    per_task_raw = {}  # task -> list[(orig_idx, reward, length)] for DP merging
     for task_name, dataset in load_from_disk(dataset_name).items():
         if task_name not in tasks:
             continue
-        prompts = dataset["problem"][:max_test]
-        targets = dataset["answer"][:max_test]
+        prompts_all = dataset["problem"][:max_test]
+        targets_all = dataset["answer"][:max_test]
+        # data-parallel shard: stride slicing keeps shards roughly balanced
+        prompts = prompts_all[shard_idx::shard_total]
+        targets = targets_all[shard_idx::shard_total]
+        orig_idx = list(range(shard_idx, len(prompts_all), shard_total))
 
         prompts = list(map(apply_template, prompts))
         print("inference for ", task_name)
@@ -219,17 +233,38 @@ def main(
                 }
             )
 
-        results[task_name] = np.mean(batch_scores)
-        avg_lens[task_name] = np.mean(batch_lengths)
+        results[task_name] = float(np.mean(batch_scores)) if batch_scores else 0.0
+        avg_lens[task_name] = float(np.mean(batch_lengths)) if batch_lengths else 0.0
         if batch_formatted:
-            formatted[task_name] = np.mean(batch_formatted)
-        max_lens[task_name] = np.max(batch_lengths)
+            formatted[task_name] = float(np.mean(batch_formatted))
+        max_lens[task_name] = int(np.max(batch_lengths)) if batch_lengths else 0
+        per_task_raw[task_name] = [
+            {"orig_idx": int(orig_idx[i]),
+             "reward": float(batch_scores[i]),
+             "lengths": [int(x) for x in batch_lengths[i]]}
+            for i in range(len(batch_scores))
+        ]
 
     print(results)
     print("avg:", np.mean(list(results.values())))
     print("avg_lens:", avg_lens)
     print("max_lens:", max_lens)
     print("formatted:", formatted)
+
+    # save per-shard raw rewards for DP merging (always, even shard_total=1)
+    import os
+    os.makedirs(save_dir, exist_ok=True)
+    safe_model = model_name.replace("/", "_").strip("_")
+    shard_fn = f"{save_dir}/raw_{safe_model}_shard{shard_idx}of{shard_total}.json"
+    json.dump({"per_task_raw": per_task_raw,
+               "results_local": results,
+               "avg_lens_local": avg_lens,
+               "max_lens_local": max_lens,
+               "formatted_local": formatted,
+               "model_name": model_name,
+               "shard": shard,
+               "template": template}, open(shard_fn, "w"), indent=2)
+    print(f"[shard {shard}] saved raw -> {shard_fn}")
 
     if save:
         fn = "model_eval_out_" + model_name.replace("/", "_") + str(int(time.time()))
