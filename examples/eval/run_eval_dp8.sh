@@ -21,7 +21,20 @@ MAX_TOKENS="${MAX_TOKENS:-32000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-34816}"
 TASKS="${TASKS:-[\"aime\",\"amc\",\"math\",\"minerva\",\"olympiad_bench\",\"aime25\"]}"
 DATASET="${DATASET:-data/evaluation_suite_v2}"
-PY="${PY:-/code/hongpaul-sandbox/cuda/miniconda3/envs/cuda/bin/python}"
+# Python resolution priority: PY > PYTHON_BIN > $CONDA_PREFIX/bin/python > $VIRTUAL_ENV/bin/python > `which python`
+if [ -n "${PY:-}" ]; then
+    :
+elif [ -n "${PYTHON_BIN:-}" ]; then
+    PY="$PYTHON_BIN"
+elif [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
+    PY="$CONDA_PREFIX/bin/python"
+elif [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+    PY="$VIRTUAL_ENV/bin/python"
+else
+    PY="$(command -v python)"
+fi
+[ -x "$PY" ] || { echo "[FATAL] python not found at: $PY"; exit 1; }
+echo "  PY=$PY"
 SAVE_DIR="${SAVE_DIR:-/tmp/eval_results/${TAG}}"
 mkdir -p "${SAVE_DIR}"
 LOG_DIR="${SAVE_DIR}/logs"
