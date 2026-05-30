@@ -35,7 +35,17 @@ else
 fi
 [ -x "$PY" ] || { echo "[FATAL] python not found at: $PY"; exit 1; }
 echo "  PY=$PY"
-SAVE_DIR="${SAVE_DIR:-/tmp/eval_results/${TAG}}"
+# Persistent save location.
+# Priority: SAVE_DIR (explicit) > SAVE_ROOT/TAG > ${CKPT_ROOT}/eval_results/TAG > $HOME/eval_results/TAG
+if [ -z "${SAVE_DIR:-}" ]; then
+    if [ -n "${SAVE_ROOT:-}" ]; then
+        SAVE_DIR="${SAVE_ROOT}/${TAG}"
+    elif [ -n "${CKPT_ROOT:-}" ] && [ -d "${CKPT_ROOT}" ]; then
+        SAVE_DIR="${CKPT_ROOT}/eval_results/${TAG}"
+    else
+        SAVE_DIR="${HOME}/eval_results/${TAG}"
+    fi
+fi
 mkdir -p "${SAVE_DIR}"
 LOG_DIR="${SAVE_DIR}/logs"
 mkdir -p "${LOG_DIR}"
