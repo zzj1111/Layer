@@ -144,7 +144,13 @@ export WANDB_API_KEY WANDB_ENTITY WANDB_MODE WANDB_DIR
 export HF_HOME="${HF_HOME:-/code/hongpaul-sandbox/temp/OPT-RL/hf_cache}"   # shared model cache across nodes
 
 # ===== Dr. GRPO hyperparams (paper Table 6) =====
-LR="${LR:-1e-6}"         # paper Table 6: 1e-6 constant; safer for R1-Distill (already SFT'd)
+# LR: full RL on R1-Distill -> 1e-6 (safer for already-SFT'd model, matches paper Table 6).
+# Layer-wise RL -> 5e-6 (only one layer trainable, larger LR moves faster without destabilizing the rest).
+if [[ -n "$LAYER" || -n "$LAYERS" ]]; then
+    LR="${LR:-5e-6}"
+else
+    LR="${LR:-1e-6}"
+fi
 ROLLOUT_N="${ROLLOUT_N:-8}"   # paper Table 6: 8 responses per question
 MAX_RESPONSE=16000       # R1-Distill needs long reasoning; default 3k clipped >50%
 MAX_PROMPT=1024          # MATH questions are short (<512 typically)
