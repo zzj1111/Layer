@@ -260,6 +260,8 @@ EOF
         trainer.n_gpus_per_node=$NGPUS \
         trainer.nnodes=1 \
         trainer.save_freq=$SAVE_FREQ \
+        trainer.max_actor_ckpt_to_keep=1 \
+        trainer.max_critic_ckpt_to_keep=1 \
         trainer.test_freq=16 \
         trainer.total_epochs=$EPOCHS \
         trainer.resume_mode=auto \
