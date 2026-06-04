@@ -112,6 +112,10 @@ def run_one_eval(ckpt: Path, save_dir: Path, args):
     env["MAX_MODEL_LEN"] = str(args.max_model_len)
     env["SAVE_DIR"] = str(save_dir)
     env["TASKS"] = "[" + ",".join(f'"{t.strip()}"' for t in args.tasks.split(",")) + "]"
+    # Propagate this script's python to bash subprocess so it uses the same env
+    # (run_eval_dp8.sh's PY resolution would otherwise pick $CONDA_PREFIX/bin/python
+    # which can be `base` instead of the env that has fire/vllm/etc.)
+    env.setdefault("PY", sys.executable)
 
     print(f"[eval] {save_dir.name}")
     print(f"       ckpt: {ckpt}")
