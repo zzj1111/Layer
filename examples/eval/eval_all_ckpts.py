@@ -112,6 +112,9 @@ def run_one_eval(ckpt: Path, save_dir: Path, args):
     env["MAX_MODEL_LEN"] = str(args.max_model_len)
     env["SAVE_DIR"] = str(save_dir)
     env["TASKS"] = "[" + ",".join(f'"{t.strip()}"' for t in args.tasks.split(",")) + "]"
+    env["TEMPERATURE"] = str(args.temperature)
+    env["TOP_P"] = str(args.top_p)
+    env["N_SAMPLES"] = str(args.n_samples)
     # Propagate this script's python to bash subprocess so it uses the same env
     # (run_eval_dp8.sh's PY resolution would otherwise pick $CONDA_PREFIX/bin/python
     # which can be `base` instead of the env that has fire/vllm/etc.)
@@ -229,6 +232,11 @@ def main():
     p.add_argument("--template", default="r1d")
     p.add_argument("--max_tokens", type=int, default=32000)
     p.add_argument("--max_model_len", type=int, default=34816)
+    p.add_argument("--temperature", type=float, default=0,
+                   help="vllm sampling temperature; >0 for stochastic eval (default 0=greedy)")
+    p.add_argument("--top_p", type=float, default=1.0)
+    p.add_argument("--n_samples", type=int, default=1,
+                   help="samples per prompt (pass@N estimation)")
     p.add_argument("--tasks", default="aime,amc,math,minerva,olympiad_bench,aime25")
     p.add_argument("--wandb_project", default="drgrpo_eval")
     p.add_argument("--exp_filter", default=None, help="Regex to filter exp_dir names")

@@ -19,6 +19,9 @@ N_SHARD=${#GPU_ARR[@]}
 TEMPLATE="${TEMPLATE:-r1d}"
 MAX_TOKENS="${MAX_TOKENS:-32000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-34816}"
+TEMPERATURE="${TEMPERATURE:-0}"     # >0 enables sampling; each python proc gets time-based seed
+TOP_P="${TOP_P:-1}"
+N_SAMPLES="${N_SAMPLES:-1}"
 TASKS="${TASKS:-[\"aime\",\"amc\",\"math\",\"minerva\",\"olympiad_bench\",\"aime25\"]}"
 DATASET="${DATASET:-data/evaluation_suite_v2}"
 # Python resolution priority: PY > PYTHON_BIN > $CONDA_PREFIX/bin/python > $VIRTUAL_ENV/bin/python > `which python`
@@ -51,7 +54,7 @@ LOG_DIR="${SAVE_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 
 echo "[DP-${N_SHARD}] eval $CKPT"
-echo "  tag=$TAG  template=$TEMPLATE  max_tokens=$MAX_TOKENS  gpus=${GPU_ARR[*]}  save=$SAVE_DIR"
+echo "  tag=$TAG  template=$TEMPLATE  max_tokens=$MAX_TOKENS  temp=$TEMPERATURE  top_p=$TOP_P  n=$N_SAMPLES  gpus=${GPU_ARR[*]}  save=$SAVE_DIR"
 
 PIDS=()
 for i in $(seq 0 $((N_SHARD - 1))); do
@@ -63,9 +66,9 @@ for i in $(seq 0 $((N_SHARD - 1))); do
         --template "$TEMPLATE" \
         --dataset_name "$DATASET" \
         --tasks "$TASKS" \
-        --temperature 0 --top_p 1 \
+        --temperature "$TEMPERATURE" --top_p "$TOP_P" \
         --max_tokens "$MAX_TOKENS" --max_model_len "$MAX_MODEL_LEN" \
-        --n_samples 1 \
+        --n_samples "$N_SAMPLES" \
         --tensor_parallel_size 1 \
         --gpu_memory_utilization 0.85 \
         --shard "${i}/${N_SHARD}" \
