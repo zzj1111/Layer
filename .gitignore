@@ -139,3 +139,6 @@ outputs
 !data/math_drgrpo_lvl3to5/*.json
 !data/evaluation_suite_v2/
 !data/evaluation_suite_v2/**
+!data/deepscaler/
+!data/deepscaler/*.parquet
+!data/deepscaler/*.json
