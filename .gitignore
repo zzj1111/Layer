@@ -145,3 +145,9 @@ outputs
 !data/skywork_or1_math/
 !data/skywork_or1_math/*.parquet
 !data/skywork_or1_math/*.json
+!data/aime24/
+!data/aime24/*.parquet
+!data/aime24/*.json
+!data/aime25/
+!data/aime25/*.parquet
+!data/aime25/*.json

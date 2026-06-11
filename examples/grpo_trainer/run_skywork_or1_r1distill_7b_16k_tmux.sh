@@ -28,6 +28,12 @@
 #   0/1 rule reward (boxed), no overlong   reward_model.reward_manager=dapo
 #     shaping                              reward_model.overlong_buffer.enable=False
 #   16K context                            data.max_response_length=16384
+#   Eval = AIME24 + AIME25, Avg@K          data.val_files=[aime24,aime25]
+#     (paper uses Avg@32; default 8 here)  val_kwargs.{n=8,do_sample=True,temperature=0.6,top_p=0.95}
+#                                          -> verl reports val-core/aime24 and /aime25 separately.
+#                                          NOTE eval runs at the 16K training context (paper evals at 32K),
+#                                          so very long AIME solutions may truncate; raise MAX_RESPONSE for
+#                                          a closer-to-paper eval at higher memory cost.
 #
 # NOTE on checkpoints/resume: we save FULL FSDP training state
 #   (save_contents=[model,optimizer,extra,hf_model]) so trainer.resume_mode=auto + --resume actually
@@ -92,7 +98,12 @@ MODEL_TAG="${MODEL_TAG:-DeepSeek-R1-Distill-Qwen-7B}"
 GPUS="${GPUS:-0,1,2,3,4,5,6,7}"   # 8x B200 server
 DATA_DIR="${DATA_DIR:-$PROJ_DIR/data/skywork_or1_math}"   # paper's Skywork-OR1-RL-Data (math), 7B-difficulty-filtered (48k)
 TRAIN_FILE="${TRAIN_FILE:-$DATA_DIR/train.parquet}"
-TEST_FILE="${TEST_FILE:-$DATA_DIR/test.parquet}"
+TEST_FILE="${TEST_FILE:-$DATA_DIR/test.parquet}"   # kept for the --data-dir convention; NOT used for val
+# ----- validation = the paper's benchmarks: AIME 2024 + AIME 2025, scored Avg@K -----
+AIME24_FILE="${AIME24_FILE:-$PROJ_DIR/data/aime24/test.parquet}"
+AIME25_FILE="${AIME25_FILE:-$PROJ_DIR/data/aime25/test.parquet}"
+VAL_FILES_HYDRA="${VAL_FILES_HYDRA:-['$AIME24_FILE','$AIME25_FILE']}"   # hydra list; verl reports per-benchmark
+VAL_N="${VAL_N:-8}"   # Avg@K: independent samples/problem at eval (paper uses 32; 8 here)
 CKPT_ROOT="${CKPT_ROOT:-/checkpoints/hongpaul-sandbox/rl-opt}"
 CONDA_INIT="${CONDA_INIT:-/code/hongpaul-sandbox/cuda/miniconda3/bin/activate}"
 CONDA_ENV_PATH="${CONDA_ENV_PATH:-/code/hongpaul-sandbox/cuda/miniconda3/envs/cuda}"
@@ -161,7 +172,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars into the inner tmux shell (tmux doesn't inherit outer env).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} VAL_N=${VAL_N:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -169,13 +180,20 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
 fi
 
 # ===== preflight =====
-if [[ ! -f "$TRAIN_FILE" ]] || [[ ! -f "$TEST_FILE" ]]; then
-    echo "ERROR: dataset files missing under $DATA_DIR"
+if [[ ! -f "$TRAIN_FILE" ]]; then
+    echo "ERROR: train file missing: $TRAIN_FILE"
     echo "  build the paper's dataset with:"
     echo "    python examples/data_preprocess/skywork_or1.py --local_save_dir $DATA_DIR"
     echo "  (on a box with internet; copy data/skywork_or1_math/ to this server if needed)"
     exit 1
 fi
+for vf in "$AIME24_FILE" "$AIME25_FILE"; do
+    if [[ ! -f "$vf" ]]; then
+        echo "ERROR: val (AIME) file missing: $vf"
+        echo "  build it with: python examples/data_preprocess/aime.py"
+        exit 1
+    fi
+done
 if [[ "$MODEL_PATH" == /* ]] && [[ ! -d "$MODEL_PATH" ]]; then
     echo "WARNING: local model path not found ($MODEL_PATH); will rely on HF download by name"
 fi
@@ -301,6 +319,7 @@ run_one() {
   lr            : $LR (constant)   clip: $CLIP_RATIO_LOW/$CLIP_RATIO_HIGH   max_resp: $MAX_RESPONSE
   loss_agg_mode : token-mean   norm_adv_by_std=True   entropy_coeff: $ENTROPY_COEFF
   rejection samp: FILTER=$FILTER  metric=$FILTER_METRIC  max_gen_batches=$MAX_NUM_GEN_BATCHES
+  val (eval)    : AIME24 + AIME25  Avg@$VAL_N  (sample temp 0.6 top_p 0.95)  test_freq=$TEST_FREQ
   layer training: ${setting:-full (all params)}
   epochs        : $EPOCHS   nominal_max_steps: $TOTAL_STEPS (dynamic sampling -> real updates fewer)   save_freq: $SAVE_FREQ
   trainer       : recipe.dapo.main_dapo (filter_groups-capable)
@@ -313,7 +332,7 @@ EOF
         algorithm.norm_adv_by_std_in_grpo=True \
         algorithm.use_kl_in_reward=False \
         "data.train_files='$TRAIN_FILE'" \
-        "data.val_files='$TEST_FILE'" \
+        "data.val_files=$VAL_FILES_HYDRA" \
         data.train_batch_size=$BATCH_SIZE \
         data.max_prompt_length=$MAX_PROMPT \
         data.max_response_length=$MAX_RESPONSE \
@@ -356,7 +375,8 @@ EOF
         actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
         actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
         actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
-        actor_rollout_ref.rollout.val_kwargs.n=1 \
+        actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+        actor_rollout_ref.rollout.val_kwargs.n=$VAL_N \
         actor_rollout_ref.ref.fsdp_config.param_offload=False \
         reward_model.reward_manager=dapo \
         reward_model.overlong_buffer.enable=False \
