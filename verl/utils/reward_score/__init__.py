@@ -56,6 +56,19 @@ def default_compute_score(
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
+    elif data_source in ["aime24", "aime25"]:
+        # AIME24/AIME25 eval (Skywork-OR1): grade \boxed{} answers with the same oat grader as the
+        # math_drgrpo training reward. (math_dapo's default extractor looks for "Answer:" not
+        # \boxed{}, so it would mis-score R1-Distill boxed outputs as wrong.)
+        from .oat_math_grader import boxed_reward_fn
+
+        info, score = boxed_reward_fn(solution_str, ground_truth, fast=True)
+        res = {
+            "score": float(score),
+            "acc": float(score),
+            "formatted": float(info.get("formatted", False)),
+            "pred": solution_str[-200:],
+        }
     elif data_source in ["math_dapo", "math", "math_dapo_reasoning"] or data_source.startswith("aime"):
         from . import math_dapo
 

@@ -17,15 +17,14 @@ repo's reward path, and the paper's OFFLINE FILTERING is applied:
      model solves every time (difficulty 0) or never (difficulty 16). For the 7B this
      keeps 48,371 / 105,055 rows. Disable with --no_filter.
 
-Skywork's raw prompt is just the bare problem (no system/boxed instruction); R1-Distill
-is relied on to box its answer. By default we prepend the same boxed system prompt the
-repo's other math datasets use, so the boxed grader reliably extracts answers. Pass
---no_system to keep Skywork's exact raw prompt.
+Skywork's RL training prompt is just the bare problem (no system prompt, no instruction);
+R1-Distill is relied on to box its answer. We reproduce that EXACTLY by default (paper-faithful).
+Pass --add_system to instead prepend a boxed system prompt (not what the paper does).
 
 Output schema matches data/math_drgrpo_*/ exactly:
     columns:      data_source, prompt, ability, reward_model, extra_info
     data_source:  "math_drgrpo"
-    prompt:       [system, user]  (or [user] with --no_system)
+    prompt:       [user]  (raw problem, paper-exact; or [system, user] with --add_system)
     reward_model: {"style": "rule", "ground_truth": <answer string>}
 
 OFFLINE note (training server has no HF access): run this on a machine WITH internet
@@ -125,8 +124,8 @@ def main() -> None:
                    help="Output dir for train.parquet + test.parquet")
     p.add_argument("--data_source", default="math_drgrpo",
                    help="data_source for reward routing (math_drgrpo -> oat_math_grader)")
-    p.add_argument("--no_system", action="store_true",
-                   help="Keep Skywork's raw prompt (no boxed system instruction)")
+    p.add_argument("--add_system", action="store_true",
+                   help="Prepend a boxed system prompt (default OFF = raw Skywork prompt, paper-exact)")
     # offline difficulty filtering (paper recipe)
     p.add_argument("--difficulty_model", default=DEFAULT_DIFF_MODEL,
                    help="model key in extra_info.model_difficulty to filter on")
@@ -160,7 +159,7 @@ def main() -> None:
               f"(dropped always-solved={dropped_easy}, never-solved={dropped_hard})")
 
     # Convert raw -> verl schema --------------------------------------------------
-    add_system = not args.no_system
+    add_system = args.add_system
     records = []
     for i, row in enumerate(raw_df.itertuples(index=False)):
         prompt_msgs = list(row.prompt)

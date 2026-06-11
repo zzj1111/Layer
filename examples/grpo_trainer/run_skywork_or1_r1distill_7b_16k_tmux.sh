@@ -225,14 +225,14 @@ PPO_INNER_EPOCH=1                   # one proximal update epoch
 # DEFAULT of 0 means NO entropy regularization at all. For a rough (non-adaptive) approximation set
 # ENTROPY_COEFF=0.001. True adaptive control requires porting Skywork's controller into the actor.
 ENTROPY_COEFF="${ENTROPY_COEFF:-0}"
-BATCH_SIZE="${BATCH_SIZE:-128}"     # prompts per training step (paper used 256; 128 is single-node 16K friendly)
-MINI_BATCH="${MINI_BATCH:-64}"      # = BATCH/2 -> 2 gradient updates per rollout batch (paper ratio)
+BATCH_SIZE="${BATCH_SIZE:-256}"     # prompts per training step (matches paper's 256)
+MINI_BATCH="${MINI_BATCH:-128}"     # = BATCH/2 -> 2 gradient updates per rollout batch (paper: 256/128)
 MICRO_BATCH="${MICRO_BATCH:-2}"     # sequences/GPU/backward. NOTE: counts SEQUENCES not tokens — at 16K each
                                     # unit is huge. If you OOM, prefer USE_DYNAMIC_BSZ=true over raising this.
 LOG_PROB_MICRO_BATCH="${LOG_PROB_MICRO_BATCH:-16}"   # forward-only (no grad); larger ok
 USE_DYNAMIC_BSZ="${USE_DYNAMIC_BSZ:-false}"   # true -> cap tokens/microbatch instead of #sequences (16K-robust)
 PPO_MAX_TOKEN_LEN="${PPO_MAX_TOKEN_LEN:-24576}"   # tokens/microbatch when USE_DYNAMIC_BSZ=true (>= prompt+some resp)
-EPOCHS="${EPOCHS:-5}"               # dynamic sampling consumes data faster; 5 leaves headroom
+EPOCHS="${EPOCHS:-1}"               # one pass over the training data
 
 # ----- rejection / dynamic sampling (paper: keep only non-zero-advantage groups) -----
 FILTER="${FILTER:-true}"
@@ -373,7 +373,7 @@ EOF
         actor_rollout_ref.rollout.top_k=-1 \
         actor_rollout_ref.rollout.max_num_batched_tokens=$((MAX_PROMPT + MAX_RESPONSE)) \
         actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
-        actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
+        actor_rollout_ref.rollout.val_kwargs.top_p=1.0 \
         actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
         actor_rollout_ref.rollout.val_kwargs.do_sample=True \
         actor_rollout_ref.rollout.val_kwargs.n=$VAL_N \

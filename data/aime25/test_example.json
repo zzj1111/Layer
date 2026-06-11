@@ -1,23 +1,13 @@
 {
   "data_source": "aime25",
-  "prompt": [
-    {
-      "role": "system",
-      "content": "Please reason step by step, and put your final answer within \\boxed{}."
-    },
-    {
-      "role": "user",
-      "content": "Find the sum of all integer bases $b>9$ for which $17_{b}$ is a divisor of $97_{b}$."
-    }
-  ],
+  "prompt": "[{'content': 'Find the sum of all integer bases $b>9$ for which $17_{b}$ is a divisor of $97_{b}$.', 'role': 'user'}]",
   "ability": "math",
   "reward_model": {
-    "style": "rule",
-    "ground_truth": "70"
+    "ground_truth": "70",
+    "style": "rule"
   },
   "extra_info": {
-    "index": 0,
-    "split": "test",
-    "benchmark": "aime25"
+    "id": 0,
+    "split": "test"
   }
 }

@@ -182,6 +182,23 @@ def main(
                 add_generation_prompt=True,
             )
 
+    elif template == "r1d_box":  # r1-distill + Skywork-OR1's appended boxed instruction (paper-exact eval)
+        from transformers import AutoTokenizer
+
+        math_reward_fn = boxed_reward_fn
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # exact string Skywork-OR1 appends in or1_data/eval/aime*.parquet (no system prompt)
+        SKYWORK_EVAL_INSTRUCTION = " Let's think step by step and output the final answer within \\boxed{}."
+
+        def apply_template(question):
+            return tokenizer.apply_chat_template(
+                [{"content": question + SKYWORK_EVAL_INSTRUCTION, "role": "user"}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+
     else:
         raise ValueError
 

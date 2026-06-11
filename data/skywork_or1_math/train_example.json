@@ -2,10 +2,6 @@
   "data_source": "math_drgrpo",
   "prompt": [
     {
-      "role": "system",
-      "content": "Please reason step by step, and put your final answer within \\boxed{}."
-    },
-    {
       "role": "user",
       "content": "33. How many six-digit numbers are there in which all digits are odd?"
     }
