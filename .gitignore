@@ -142,3 +142,6 @@ outputs
 !data/deepscaler/
 !data/deepscaler/*.parquet
 !data/deepscaler/*.json
+!data/skywork_or1_math/
+!data/skywork_or1_math/*.parquet
+!data/skywork_or1_math/*.json
