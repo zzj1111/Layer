@@ -19,7 +19,7 @@
 #                                          actor.use_kl_loss=False  kl_loss_coef=0
 #   Symmetric clip 0.2                     actor.clip_ratio_low=0.2  clip_ratio_high=0.2
 #   Token-level policy loss                actor.loss_agg_mode=token-mean
-#   Constant LR 1e-6                       actor.optim.lr=1e-6  warmup=0
+#   Constant LR (paper 1e-6)               actor.optim.lr=$LR  warmup=0   (DEFAULT here 5e-6; LR=1e-6 for paper)
 #   Group size (rollouts/prompt) = 16      actor_rollout_ref.rollout.n=16
 #   Sampling temperature 1.0               rollout.temperature=1.0 top_p=1.0 top_k=-1
 #   Rejection sampling (keep groups with   algorithm.filter_groups.enable=True
@@ -207,11 +207,11 @@ export WANDB_API_KEY WANDB_ENTITY WANDB_MODE WANDB_DIR
 export HF_HOME="${HF_HOME:-/code/hongpaul-sandbox/temp/OPT-RL/hf_cache}"
 
 # ===== Skywork-OR1 (MAGIC) hyperparameters =====
-# Layer-wise RL gets a larger LR (only one layer trains); full RL uses the paper's 1e-6.
+# LR default 5e-6 (per request; the paper uses constant 1e-6). Override anytime with LR=1e-6.
 if [[ -n "$LAYER" || -n "$LAYERS" ]]; then
     LR="${LR:-5e-6}"
 else
-    LR="${LR:-1e-6}"        # paper: constant 1e-6
+    LR="${LR:-5e-6}"        # full RL: 5e-6 (paper uses 1e-6 -> set LR=1e-6 to match the paper)
 fi
 ROLLOUT_N="${ROLLOUT_N:-8}"         # group size per prompt (paper uses 16; default 8 per request)
 MAX_RESPONSE=16384                  # 16K stage (16*1024)
