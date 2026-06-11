@@ -179,13 +179,16 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     exit 0
 fi
 
-# Running inline (--no-tmux, or already inside a tmux/shell): activate the conda env so the
-# ray/vllm workers inherit the right environment. The tmux launch string above does this itself;
-# here we cover the no-tmux path. Skipped if the target env is already active.
-if [[ "${CONDA_PREFIX:-}" != "$CONDA_ENV_PATH" ]] && [[ -f "$CONDA_INIT" ]]; then
-    echo "[env] activating conda env: $CONDA_ENV_PATH"
+# Running inline (--no-tmux, or already inside a tmux/shell): if you have ALREADY activated your own
+# python env (CONDA_PREFIX or VIRTUAL_ENV set, e.g. you ran `source .../bin/activate`), we respect it
+# and do nothing. Only when no env is active do we fall back to activating the configured conda env so
+# ray/vllm workers get a sane environment.
+if [[ -z "${CONDA_PREFIX:-}" ]] && [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -f "$CONDA_INIT" ]]; then
+    echo "[env] no active python env; activating configured conda env: $CONDA_ENV_PATH"
     # shellcheck disable=SC1090
     source "$CONDA_INIT" && conda activate "$CONDA_ENV_PATH"
+else
+    echo "[env] using already-active env: ${CONDA_PREFIX:-${VIRTUAL_ENV:-<none>}}  (python: $(command -v python 2>/dev/null))"
 fi
 
 # ===== preflight =====
