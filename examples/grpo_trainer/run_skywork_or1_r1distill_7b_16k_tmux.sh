@@ -179,6 +179,15 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     exit 0
 fi
 
+# Running inline (--no-tmux, or already inside a tmux/shell): activate the conda env so the
+# ray/vllm workers inherit the right environment. The tmux launch string above does this itself;
+# here we cover the no-tmux path. Skipped if the target env is already active.
+if [[ "${CONDA_PREFIX:-}" != "$CONDA_ENV_PATH" ]] && [[ -f "$CONDA_INIT" ]]; then
+    echo "[env] activating conda env: $CONDA_ENV_PATH"
+    # shellcheck disable=SC1090
+    source "$CONDA_INIT" && conda activate "$CONDA_ENV_PATH"
+fi
+
 # ===== preflight =====
 if [[ ! -f "$TRAIN_FILE" ]]; then
     echo "ERROR: train file missing: $TRAIN_FILE"
