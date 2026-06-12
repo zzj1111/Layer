@@ -257,7 +257,7 @@ GEN_BATCH_SIZE="${GEN_BATCH_SIZE:-$BATCH_SIZE}"  # prompts generated per gen rou
 
 STEPS_PER_EPOCH=$($PYTHON_BIN -c "import pandas as pd; print(max(1, len(pd.read_parquet('$TRAIN_FILE')) // $GEN_BATCH_SIZE))")
 TOTAL_STEPS=$((STEPS_PER_EPOCH * EPOCHS))
-SAVE_FREQ="${SAVE_FREQ:-50}"        # fixed cadence (dynamic sampling makes epoch boundaries fuzzy)
+SAVE_FREQ="${SAVE_FREQ:-20}"        # save a checkpoint every 20 steps
 TEST_FREQ="${TEST_FREQ:-25}"
 
 # -----------------------------------------------------------------------------
