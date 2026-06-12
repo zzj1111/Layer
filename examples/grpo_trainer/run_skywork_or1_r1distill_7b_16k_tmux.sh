@@ -172,7 +172,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars into the inner tmux shell (tmux doesn't inherit outer env).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} VAL_N=${VAL_N:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} MAX_RESPONSE=${MAX_RESPONSE:-} GPU_MEM_UTIL=${GPU_MEM_UTIL:-} VAL_N=${VAL_N:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -226,7 +226,7 @@ else
     LR="${LR:-5e-6}"        # full RL: 5e-6 (paper uses 1e-6 -> set LR=1e-6 to match the paper)
 fi
 ROLLOUT_N="${ROLLOUT_N:-8}"         # group size per prompt (paper uses 16; default 8 per request)
-MAX_RESPONSE=16384                  # 16K stage (16*1024)
+MAX_RESPONSE="${MAX_RESPONSE:-16384}"   # 16K stage (16*1024). Set MAX_RESPONSE=8192 for the faster 8K stage.
 MAX_PROMPT=2048                     # Skywork math prompts are short (p99~315 tok, max~1.8k); 2048 -> 0 dropped
 CLIP_RATIO_LOW=0.2                  # paper: symmetric clip 0.2
 CLIP_RATIO_HIGH=0.2
@@ -244,6 +244,7 @@ MICRO_BATCH="${MICRO_BATCH:-2}"     # sequences/GPU/backward. NOTE: counts SEQUE
 LOG_PROB_MICRO_BATCH="${LOG_PROB_MICRO_BATCH:-16}"   # forward-only (no grad); larger ok
 USE_DYNAMIC_BSZ="${USE_DYNAMIC_BSZ:-false}"   # true -> cap tokens/microbatch instead of #sequences (16K-robust)
 PPO_MAX_TOKEN_LEN="${PPO_MAX_TOKEN_LEN:-24576}"   # tokens/microbatch when USE_DYNAMIC_BSZ=true (>= prompt+some resp)
+GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.7}"   # vLLM KV-cache fraction; raise to 0.8-0.85 for faster generation (main speed knob)
 EPOCHS="${EPOCHS:-1}"               # one pass over the training data
 
 # ----- rejection / dynamic sampling (paper: keep only non-zero-advantage groups) -----
@@ -375,7 +376,7 @@ EOF
         actor_rollout_ref.rollout.name=vllm \
         actor_rollout_ref.rollout.mode=async \
         actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-        actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
+        actor_rollout_ref.rollout.gpu_memory_utilization=$GPU_MEM_UTIL \
         actor_rollout_ref.rollout.agent.num_workers=$NGPUS \
         actor_rollout_ref.rollout.enforce_eager=True \
         actor_rollout_ref.rollout.free_cache_engine=True \
