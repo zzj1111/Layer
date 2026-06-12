@@ -226,7 +226,7 @@ else
     LR="${LR:-5e-6}"        # full RL: 5e-6 (paper uses 1e-6 -> set LR=1e-6 to match the paper)
 fi
 ROLLOUT_N="${ROLLOUT_N:-8}"         # group size per prompt (paper uses 16; default 8 per request)
-MAX_RESPONSE="${MAX_RESPONSE:-16384}"   # 16K stage (16*1024). Set MAX_RESPONSE=8192 for the faster 8K stage.
+MAX_RESPONSE="${MAX_RESPONSE:-16384}"   # always 16K (16*1024); not running a separate 8K stage
 MAX_PROMPT=2048                     # Skywork math prompts are short (p99~315 tok, max~1.8k); 2048 -> 0 dropped
 CLIP_RATIO_LOW=0.2                  # paper: symmetric clip 0.2
 CLIP_RATIO_HIGH=0.2
