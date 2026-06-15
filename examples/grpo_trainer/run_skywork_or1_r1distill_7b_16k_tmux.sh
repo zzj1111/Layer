@@ -172,7 +172,7 @@ if [[ -z "${TMUX:-}" ]] && [[ "$NO_TMUX" == "false" ]]; then
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
     for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do FULL_ARGS="$FULL_ARGS $(printf '%q' "$arg")"; done
     # Forward overridable env vars into the inner tmux shell (tmux doesn't inherit outer env).
-    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} MAX_RESPONSE=${MAX_RESPONSE:-} GPU_MEM_UTIL=${GPU_MEM_UTIL:-} VAL_N=${VAL_N:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
+    ENV_INJECT="LR=${LR:-} EPOCHS=${EPOCHS:-} MAX_STEPS=${MAX_STEPS:-} BATCH_SIZE=${BATCH_SIZE:-} MINI_BATCH=${MINI_BATCH:-} MICRO_BATCH=${MICRO_BATCH:-} LOG_PROB_MICRO_BATCH=${LOG_PROB_MICRO_BATCH:-} ROLLOUT_N=${ROLLOUT_N:-} ENTROPY_COEFF=${ENTROPY_COEFF:-} FILTER=${FILTER:-} FILTER_METRIC=${FILTER_METRIC:-} MAX_NUM_GEN_BATCHES=${MAX_NUM_GEN_BATCHES:-} GEN_BATCH_SIZE=${GEN_BATCH_SIZE:-} USE_DYNAMIC_BSZ=${USE_DYNAMIC_BSZ:-} PPO_MAX_TOKEN_LEN=${PPO_MAX_TOKEN_LEN:-} MAX_RESPONSE=${MAX_RESPONSE:-} GPU_MEM_UTIL=${GPU_MEM_UTIL:-} VAL_N=${VAL_N:-} SAVE_FREQ=${SAVE_FREQ:-} TEST_FREQ=${TEST_FREQ:-}"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -245,7 +245,13 @@ LOG_PROB_MICRO_BATCH="${LOG_PROB_MICRO_BATCH:-16}"   # forward-only (no grad); l
 USE_DYNAMIC_BSZ="${USE_DYNAMIC_BSZ:-false}"   # true -> cap tokens/microbatch instead of #sequences (16K-robust)
 PPO_MAX_TOKEN_LEN="${PPO_MAX_TOKEN_LEN:-24576}"   # tokens/microbatch when USE_DYNAMIC_BSZ=true (>= prompt+some resp)
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.7}"   # vLLM KV-cache fraction; raise to 0.8-0.85 for faster generation (main speed knob)
-EPOCHS="${EPOCHS:-1}"               # one pass over the training data
+EPOCHS="${EPOCHS:-1}"               # one pass over the training data (used only when MAX_STEPS is unset)
+# MAX_STEPS: target an EXACT number of gradient updates. RECOMMENDED over EPOCHS because rejection
+# sampling consumes >1 gen batch per step, so an "epoch" yields an unpredictable (~half) step count.
+# When set, we run with a high epoch cap and let trainer.total_training_steps stop the run cleanly at
+# exactly MAX_STEPS via is_last_step -> the SAME clean save path as periodic saves (no fragile
+# end-of-data fall-through). Leave empty to fall back to EPOCHS.
+MAX_STEPS="${MAX_STEPS:-}"
 
 # ----- rejection / dynamic sampling (paper: keep only non-zero-advantage groups) -----
 FILTER="${FILTER:-true}"
@@ -322,6 +328,15 @@ run_one() {
         )
     fi
 
+    # step-budget args: target an exact #updates (MAX_STEPS, robust) or fall back to EPOCHS
+    local STEP_ARGS=()
+    if [[ -n "$MAX_STEPS" ]]; then
+        # high epoch cap so the data cycles; total_training_steps stops cleanly at MAX_STEPS
+        STEP_ARGS=(trainer.total_epochs=1000 trainer.total_training_steps=$MAX_STEPS)
+    else
+        STEP_ARGS=(trainer.total_epochs=$EPOCHS)
+    fi
+
     cat <<EOF
 ============================================================
   Skywork-OR1 (MAGIC) 16K  —  $EXP_NAME
@@ -334,7 +349,7 @@ run_one() {
   rejection samp: FILTER=$FILTER  metric=$FILTER_METRIC  max_gen_batches=$MAX_NUM_GEN_BATCHES
   val (eval)    : AIME24 + AIME25  Avg@$VAL_N  (sample temp 0.6 top_p 0.95)  test_freq=$TEST_FREQ
   layer training: ${setting:-full (all params)}
-  epochs        : $EPOCHS   nominal_max_steps: $TOTAL_STEPS (dynamic sampling -> real updates fewer)   save_freq: $SAVE_FREQ
+  steps         : ${MAX_STEPS:+MAX_STEPS=$MAX_STEPS (exact, clean stop)}${MAX_STEPS:-EPOCHS=$EPOCHS -> ~$TOTAL_STEPS nominal (rejection sampling -> real updates ~half)}   save_freq: $SAVE_FREQ
   trainer       : recipe.dapo.main_dapo (filter_groups-capable)
   ckpts         : $CKPTS_DIR
 ============================================================
@@ -404,7 +419,7 @@ EOF
         trainer.max_actor_ckpt_to_keep=1 \
         trainer.max_critic_ckpt_to_keep=1 \
         trainer.test_freq=$TEST_FREQ \
-        trainer.total_epochs=$EPOCHS \
+        "${STEP_ARGS[@]}" \
         trainer.resume_mode=auto \
         "${BSZ_ARGS[@]}" \
         "${FILTER_ARGS[@]}" \
