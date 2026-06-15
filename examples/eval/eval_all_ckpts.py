@@ -147,36 +147,40 @@ def log_to_wandb(exp_name, results, args):
         print("[warn] wandb not installed, skipping upload")
         return
 
-    run_id = hashlib.md5(f"eval_{exp_name}".encode()).hexdigest()[:8]
-    run = wandb.init(
-        project=args.wandb_project,
-        id=run_id,
-        name=f"eval_{exp_name}",
-        group=exp_name,
-        tags=["eval", args.template, exp_name],
-        resume="allow",
-        mode=os.environ.get("WANDB_MODE", "online"),
-        config={
-            "exp": exp_name,
-            "template": args.template,
-            "max_tokens": args.max_tokens,
-            "max_model_len": args.max_model_len,
-            "tasks": [t.strip() for t in args.tasks.split(",")],
-        },
-    )
-    n_logged = 0
-    for step, final in results:
-        if final is None:
-            continue
-        log = {f"acc/{k}": v for k, v in final["results"].items()}
-        log["acc/avg"] = final["avg"]
-        log.update({f"len_avg/{k}": v for k, v in final["avg_lens"].items()})
-        log.update({f"len_max/{k}": v for k, v in final["max_lens"].items()})
-        wandb.log(log, step=step)
-        print(f"  [wandb] step={step}  avg={final['avg']:.4f}")
-        n_logged += 1
-    wandb.finish()
-    print(f"[wandb] {exp_name}: {n_logged} steps logged (run id={run_id})")
+    # wandb failures must never kill the batch — eval results are already saved as final.json.
+    try:
+        run_id = hashlib.md5(f"eval_{exp_name}".encode()).hexdigest()[:8]
+        run = wandb.init(
+            project=args.wandb_project,
+            id=run_id,
+            name=f"eval_{exp_name}",
+            group=exp_name,
+            tags=[t[:64] for t in ("eval", args.template, exp_name)],   # wandb tags must be 1-64 chars
+            resume="allow",
+            mode=os.environ.get("WANDB_MODE", "online"),
+            config={
+                "exp": exp_name,
+                "template": args.template,
+                "max_tokens": args.max_tokens,
+                "max_model_len": args.max_model_len,
+                "tasks": [t.strip() for t in args.tasks.split(",")],
+            },
+        )
+        n_logged = 0
+        for step, final in results:
+            if final is None:
+                continue
+            log = {f"acc/{k}": v for k, v in final["results"].items()}
+            log["acc/avg"] = final["avg"]
+            log.update({f"len_avg/{k}": v for k, v in final["avg_lens"].items()})
+            log.update({f"len_max/{k}": v for k, v in final["max_lens"].items()})
+            wandb.log(log, step=step)
+            print(f"  [wandb] step={step}  avg={final['avg']:.4f}")
+            n_logged += 1
+        wandb.finish()
+        print(f"[wandb] {exp_name}: {n_logged} steps logged (run id={run_id})")
+    except Exception as e:
+        print(f"[warn] wandb logging failed for {exp_name}: {e}  -- eval results saved; continuing")
 
 
 # ---- summary ----
