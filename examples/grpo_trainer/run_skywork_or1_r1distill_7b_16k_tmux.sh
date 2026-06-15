@@ -29,7 +29,7 @@
 #     shaping                              reward_model.overlong_buffer.enable=False
 #   16K context                            data.max_response_length=16384
 #   Eval = AIME24 + AIME25, Avg@K          data.val_files=[aime24,aime25]
-#     (paper uses Avg@32; default 8 here)  val_kwargs.{n=8,do_sample=True,temperature=0.6,top_p=0.95}
+#     (paper uses Avg@32; default 8 here)  val_kwargs.{n=8,do_sample=True,temperature=0.6,top_p=1.0}
 #                                          -> verl reports val-core/aime24 and /aime25 separately.
 #                                          NOTE eval runs at the 16K training context (paper evals at 32K),
 #                                          so very long AIME solutions may truncate; raise MAX_RESPONSE for
@@ -347,7 +347,7 @@ run_one() {
   lr            : $LR (constant)   clip: $CLIP_RATIO_LOW/$CLIP_RATIO_HIGH   max_resp: $MAX_RESPONSE
   loss_agg_mode : token-mean   norm_adv_by_std=True   entropy_coeff: $ENTROPY_COEFF
   rejection samp: FILTER=$FILTER  metric=$FILTER_METRIC  max_gen_batches=$MAX_NUM_GEN_BATCHES
-  val (eval)    : AIME24 + AIME25  Avg@$VAL_N  (sample temp 0.6 top_p 0.95)  test_freq=$TEST_FREQ
+  val (eval)    : AIME24 + AIME25  Avg@$VAL_N  (sample temp 0.6 top_p 1.0)  test_freq=$TEST_FREQ
   layer training: ${setting:-full (all params)}
   steps         : ${MAX_STEPS:+MAX_STEPS=$MAX_STEPS (exact, clean stop)}${MAX_STEPS:-EPOCHS=$EPOCHS -> ~$TOTAL_STEPS nominal (rejection sampling -> real updates ~half)}   save_freq: $SAVE_FREQ
   trainer       : recipe.dapo.main_dapo (filter_groups-capable)
