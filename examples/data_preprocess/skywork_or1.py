@@ -210,7 +210,7 @@ def main() -> None:
     print(f"✓ prompt = {'[system, user]' if add_system else '[user] (raw Skywork)'}")
     print()
     print("Train with:")
-    print(f"  bash examples/grpo_trainer/run_skyor1_16k.sh --data-dir {out_dir}")
+    print(f"  bash examples/grpo_trainer/run_skywork_or1_r1distill_7b_16k_tmux.sh --data-dir {out_dir}")
 
 
 if __name__ == "__main__":

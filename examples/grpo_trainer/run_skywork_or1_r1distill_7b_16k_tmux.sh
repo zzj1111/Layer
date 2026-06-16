@@ -63,27 +63,27 @@
 # USAGE
 # ------------------------------------------------------------------------------
 # Full RL (8x B200, single node):
-#   bash run_skyor1_16k.sh
+#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh
 #
 # 16K stage continuing from your own 8K-stage checkpoint:
-#   bash run_skyor1_16k.sh --init-from /path/to/8k_ckpt/global_step_540/actor/huggingface
+#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --init-from /path/to/8k_ckpt/global_step_540/actor/huggingface
 #
 # Layer-wise RL on one layer (your research line):
-#   bash run_skyor1_16k.sh --layer 14
+#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --layer 14
 #
 # Sweep across settings (sequential on one node):
-#   bash run_skyor1_16k.sh --layers "full 0 6 12 18 27"
+#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --layers "full 0 6 12 18 27"
 #
 # Multi-node parallel — same --layers everywhere, each node a --part:
 #   node1: ... --layers "full 0..27" --part 1/4
 #   node2: ... --layers "full 0..27" --part 2/4   (etc.)
 #
 # Resume / extend a previous run (same settings, more epochs):
-#   EPOCHS=8 bash run_skyor1_16k.sh --resume
+#   EPOCHS=8 bash run_skywork_or1_r1distill_7b_16k_tmux.sh --resume
 #
 # Override hyperparameters via env:
 #   BATCH_SIZE=256 MINI_BATCH=128 ROLLOUT_N=16 LR=1e-6 ENTROPY_COEFF=0.001 \
-#     bash run_skyor1_16k.sh
+#     bash run_skywork_or1_r1distill_7b_16k_tmux.sh
 # ==============================================================================
 
 set -uo pipefail
@@ -279,12 +279,12 @@ run_one() {
     fi
 
     local FILTER_TAG=""; [[ "$FILTER" == "true" ]] && FILTER_TAG="_rs"   # rs = rejection sampling
-    # ckpt folder name. Lives under $CKPT_ROOT/$WANDB_PROJECT/ (e.g. .../Skywork-OR1-R1Distill7B/),
-    # which already encodes the recipe+model -> drop the redundant "SkyOR1_" and constant "r16384_".
-    local EXP_NAME="${DATE}_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_lr${LR}${FILTER_TAG}"
+    # ckpt folder name, e.g. 0612_0009_SkyOR1_R1Distill7B_full_n8_r16384_lr5e-6_rs  (MODEL_TAG short).
+    # MUST match what examples/grpo_trainer/shorten_ckpt_names.py produces when it shortens old dirs.
+    local EXP_NAME="${DATE}_SkyOR1_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_r${MAX_RESPONSE}_lr${LR}${FILTER_TAG}"
 
     if [[ "$RESUME" == "true" ]]; then
-        local suffix="_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_lr${LR}${FILTER_TAG}"
+        local suffix="_SkyOR1_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_r${MAX_RESPONSE}_lr${LR}${FILTER_TAG}"
         local found
         found=$(ls -dt "${CKPT_ROOT}/${WANDB_PROJECT}/"*"${suffix}" 2>/dev/null | head -1)
         if [[ -n "$found" ]]; then
