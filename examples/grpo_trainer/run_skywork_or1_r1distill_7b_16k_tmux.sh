@@ -94,7 +94,7 @@ SCRIPT_NAME=$(basename "$0")
 
 # ===== defaults =====
 MODEL_PATH="${MODEL_PATH:-/code-fsx/hongpaul-sandbox/code/temp/DeepSeek-R1-Distill-Qwen-7B}"   # local pre-downloaded weights
-MODEL_TAG="${MODEL_TAG:-DeepSeek-R1-Distill-Qwen-7B}"
+MODEL_TAG="${MODEL_TAG:-R1Distill7B}"   # short tag -> exp/ckpt names stay <64 chars (wandb tag limit)
 GPUS="${GPUS:-0,1,2,3,4,5,6,7}"   # 8x B200 server
 DATA_DIR="${DATA_DIR:-$PROJ_DIR/data/skywork_or1_math}"   # paper's Skywork-OR1-RL-Data (math), 7B-difficulty-filtered (48k)
 TRAIN_FILE="${TRAIN_FILE:-$DATA_DIR/train.parquet}"
