@@ -63,27 +63,27 @@
 # USAGE
 # ------------------------------------------------------------------------------
 # Full RL (8x B200, single node):
-#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh
+#   bash run_skyor1_16k.sh
 #
 # 16K stage continuing from your own 8K-stage checkpoint:
-#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --init-from /path/to/8k_ckpt/global_step_540/actor/huggingface
+#   bash run_skyor1_16k.sh --init-from /path/to/8k_ckpt/global_step_540/actor/huggingface
 #
 # Layer-wise RL on one layer (your research line):
-#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --layer 14
+#   bash run_skyor1_16k.sh --layer 14
 #
 # Sweep across settings (sequential on one node):
-#   bash run_skywork_or1_r1distill_7b_16k_tmux.sh --layers "full 0 6 12 18 27"
+#   bash run_skyor1_16k.sh --layers "full 0 6 12 18 27"
 #
 # Multi-node parallel — same --layers everywhere, each node a --part:
 #   node1: ... --layers "full 0..27" --part 1/4
 #   node2: ... --layers "full 0..27" --part 2/4   (etc.)
 #
 # Resume / extend a previous run (same settings, more epochs):
-#   EPOCHS=8 bash run_skywork_or1_r1distill_7b_16k_tmux.sh --resume
+#   EPOCHS=8 bash run_skyor1_16k.sh --resume
 #
 # Override hyperparameters via env:
 #   BATCH_SIZE=256 MINI_BATCH=128 ROLLOUT_N=16 LR=1e-6 ENTROPY_COEFF=0.001 \
-#     bash run_skywork_or1_r1distill_7b_16k_tmux.sh
+#     bash run_skyor1_16k.sh
 # ==============================================================================
 
 set -uo pipefail
