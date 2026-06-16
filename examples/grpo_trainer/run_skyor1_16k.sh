@@ -279,10 +279,12 @@ run_one() {
     fi
 
     local FILTER_TAG=""; [[ "$FILTER" == "true" ]] && FILTER_TAG="_rs"   # rs = rejection sampling
-    local EXP_NAME="${DATE}_SkyOR1_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_r${MAX_RESPONSE}_lr${LR}${FILTER_TAG}"
+    # ckpt folder name. Lives under $CKPT_ROOT/$WANDB_PROJECT/ (e.g. .../Skywork-OR1-R1Distill7B/),
+    # which already encodes the recipe+model -> drop the redundant "SkyOR1_" and constant "r16384_".
+    local EXP_NAME="${DATE}_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_lr${LR}${FILTER_TAG}"
 
     if [[ "$RESUME" == "true" ]]; then
-        local suffix="_SkyOR1_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_r${MAX_RESPONSE}_lr${LR}${FILTER_TAG}"
+        local suffix="_${MODEL_TAG}_${LAYER_NAME}_n${ROLLOUT_N}_lr${LR}${FILTER_TAG}"
         local found
         found=$(ls -dt "${CKPT_ROOT}/${WANDB_PROJECT}/"*"${suffix}" 2>/dev/null | head -1)
         if [[ -n "$found" ]]; then
