@@ -22,10 +22,17 @@ EXP_ROOT="${1:-/checkpoints/hongpaul-sandbox/rl-opt/skywork/Skywork-OR1-R1Distil
 OUTPUT_DIR="${OUTPUT_DIR:-/code-fsx/hongpaul-sandbox/code/temp/wandb}"
 OUT_ZIP="${2:-$OUTPUT_DIR/skywork_wandb_$(date +%Y%m%d_%H%M%S).zip}"
 STAGE_ROOT="${STAGE_ROOT:-$OUTPUT_DIR/.staging}"
-CENTRAL_WANDB="/checkpoints/hongpaul-sandbox/rl-opt/wandb_offline/wandb"
+CENTRAL_WANDB="${CENTRAL_WANDB:-/checkpoints/hongpaul-sandbox/rl-opt/wandb_offline/wandb}"
+# extra search roots (training scripts that don't set WANDB_DIR write to cwd)
+EXTRA_WANDB_DIRS=(
+    "/code-fsx/hongpaul-sandbox/code/temp/Layer/wandb"
+    "/code-fsx/hongpaul-sandbox/code/temp/Layer_1/wandb"
+)
 
 # Match patterns for filtering central wandb_offline (run name field)
-NAME_PATTERN='SkyOR1|Skywork-OR1|SkyOR1_R1Distill7B'
+# Override with NAME_PATTERN env; or set FILTER=off to grab ALL runs (no filtering)
+NAME_PATTERN="${NAME_PATTERN:-SkyOR1|Skywork-OR1|SkyOR1_R1Distill7B|DeepSeek-R1-Distill-Qwen-7B}"
+FILTER="${FILTER:-on}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" ; }
 
@@ -47,29 +54,45 @@ while IFS= read -r -d '' d; do
 done < <(find "$EXP_ROOT" -type d -name "offline-run-*" -print0 2>/dev/null)
 log "  found ${#EXP_RUNS[@]} runs nested under exp dirs"
 
-# ---- Pass 2: runs in central wandb_offline matching pattern -------------
-log "Pass 2: central $CENTRAL_WANDB filtered by name pattern '$NAME_PATTERN'"
-CENTRAL_RUNS=()
-if [ -d "$CENTRAL_WANDB" ]; then
+# Helper: filter a run dir against NAME_PATTERN. FILTER=off skips all checks.
+run_matches() {
+    local d="$1"
+    if [ "$FILTER" = "off" ]; then return 0; fi
+    # Try multiple sources: config.yaml, output.log, wandb-metadata.json, dir name
+    local hay=""
+    [ -f "$d/files/config.yaml" ] && hay="$hay $(head -c 4096 "$d/files/config.yaml" 2>/dev/null)"
+    [ -f "$d/files/output.log" ] && hay="$hay $(head -c 4096 "$d/files/output.log" 2>/dev/null)"
+    [ -f "$d/files/wandb-metadata.json" ] && hay="$hay $(cat "$d/files/wandb-metadata.json" 2>/dev/null)"
+    hay="$hay $d"
+    echo "$hay" | grep -qE "$NAME_PATTERN"
+}
+
+scan_central() {
+    local root="$1"
+    local label="$2"
+    if [ ! -d "$root" ]; then
+        log "  ($label: dir not present, skipping)"
+        return
+    fi
+    local matched=0
+    local total=0
     while IFS= read -r -d '' d; do
-        # Read the run name from files/config.yaml or output.log
-        run_name=""
-        if [ -f "$d/files/config.yaml" ]; then
-            run_name=$(grep -m1 -E "^[[:space:]]*name:|^[[:space:]]*experiment_name:" "$d/files/config.yaml" 2>/dev/null | head -1)
-        fi
-        # Also check files/output.log for the exp name
-        log_match=""
-        if [ -f "$d/files/output.log" ]; then
-            log_match=$(grep -m1 -oE "$NAME_PATTERN" "$d/files/output.log" 2>/dev/null || true)
-        fi
-        if echo "$run_name $log_match $d" | grep -qE "$NAME_PATTERN"; then
+        total=$((total + 1))
+        if run_matches "$d"; then
             CENTRAL_RUNS+=("$d")
+            matched=$((matched + 1))
         fi
-    done < <(find "$CENTRAL_WANDB" -maxdepth 1 -type d -name "offline-run-*" -print0 2>/dev/null)
-    log "  found ${#CENTRAL_RUNS[@]} runs in central matching pattern"
-else
-    log "  (central dir not present, skipping)"
-fi
+    done < <(find "$root" -maxdepth 1 -type d -name "offline-run-*" -print0 2>/dev/null)
+    log "  $label: $matched matched / $total total"
+}
+
+# ---- Pass 2: central wandb_offline + extra search roots -----------------
+log "Pass 2: filtering by NAME_PATTERN='$NAME_PATTERN' (FILTER=$FILTER)"
+CENTRAL_RUNS=()
+scan_central "$CENTRAL_WANDB" "central wandb_offline"
+for extra in "${EXTRA_WANDB_DIRS[@]}"; do
+    scan_central "$extra" "extra:$extra"
+done
 
 TOTAL=$(( ${#EXP_RUNS[@]} + ${#CENTRAL_RUNS[@]} ))
 if [ "$TOTAL" = "0" ]; then
