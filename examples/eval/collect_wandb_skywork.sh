@@ -6,6 +6,10 @@
 #   bash collect_wandb_skywork.sh                                # default paths
 #   bash collect_wandb_skywork.sh /custom/exp/root /custom/out.zip
 #
+# Defaults:
+#   OUT_ZIP:     $HOME/skywork_wandb_<ts>.zip   (NOT /tmp)
+#   STAGE_ROOT:  $HOME/.cache/wandb_collect/    (NOT /tmp, auto-cleaned)
+#
 # Searches:
 #   1. <EXP_ROOT>/**/offline-run-*   (runs co-located with exp dir)
 #   2. /checkpoints/hongpaul-sandbox/rl-opt/wandb_offline/wandb/offline-run-*
@@ -14,7 +18,10 @@
 set -euo pipefail
 
 EXP_ROOT="${1:-/checkpoints/hongpaul-sandbox/rl-opt/skywork/Skywork-OR1-R1Distill7B}"
-OUT_ZIP="${2:-/tmp/skywork_wandb_$(date +%Y%m%d_%H%M%S).zip}"
+# Default output: under $HOME (persistent, NOT /tmp)
+OUT_ZIP="${2:-$HOME/skywork_wandb_$(date +%Y%m%d_%H%M%S).zip}"
+# Staging dir: under $HOME/.cache (NOT /tmp), auto-cleaned at exit
+STAGE_ROOT="${STAGE_ROOT:-$HOME/.cache/wandb_collect}"
 CENTRAL_WANDB="/checkpoints/hongpaul-sandbox/rl-opt/wandb_offline/wandb"
 
 # Match patterns for filtering central wandb_offline (run name field)
@@ -24,7 +31,8 @@ log() { echo "[$(date '+%H:%M:%S')] $*" ; }
 
 [ -d "$EXP_ROOT" ] || { echo "ERROR: EXP_ROOT not found: $EXP_ROOT" >&2; exit 1; }
 
-WORKDIR=$(mktemp -d /tmp/skywork_wandb_collect.XXXXXX)
+mkdir -p "$STAGE_ROOT"
+WORKDIR=$(mktemp -d -p "$STAGE_ROOT" wandb_collect.XXXXXX)
 trap "rm -rf $WORKDIR" EXIT
 
 log "EXP_ROOT: $EXP_ROOT"
@@ -120,5 +128,5 @@ echo "  unzip -l $OUT_ZIP | head"
 echo "  unzip -p $OUT_ZIP MANIFEST.txt"
 echo
 echo "Sync to wandb cloud later with:"
-echo "  unzip $OUT_ZIP -d /tmp/skywork_extracted/"
-echo "  wandb sync /tmp/skywork_extracted/from_*/offline-run-*"
+echo "  unzip $OUT_ZIP -d \$HOME/skywork_extracted/"
+echo "  wandb sync \$HOME/skywork_extracted/from_*/offline-run-*"
