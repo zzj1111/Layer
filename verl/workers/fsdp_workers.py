@@ -281,6 +281,65 @@ class ActorRolloutRefWorker(Worker):
                 actor_module = get_peft_model(actor_module, LoraConfig(**lora_config))
         torch.distributed.barrier()
 
+        # ---- Layer-wise RL training (freeze all params except selected layers) ----
+        # Done BEFORE FSDP wrap so each FlatParameter is created with the correct
+        # requires_grad flag. Controlled by actor.train_layer_ids, e.g.
+        #   +actor_rollout_ref.actor.train_layer_ids="14"      (single layer)
+        #   +actor_rollout_ref.actor.train_layer_ids="0,14,27" (multiple)
+        #   +actor_rollout_ref.actor.train_layer_ids="first,middle,last,lm_head"
+        # None / "" / "full" (default) = train all params.
+        use_orig_params_override = False
+        train_layer_ids_cfg = self.config.actor.get("train_layer_ids", None) if role == "actor" else None
+        if train_layer_ids_cfg is not None and str(train_layer_ids_cfg).strip() not in ("", "full", "None"):
+            if hasattr(actor_module, "model") and hasattr(actor_module.model, "layers"):
+                total_layers = len(actor_module.model.layers)
+            else:
+                total_layers = None
+            if total_layers is None:
+                if self.rank == 0:
+                    print("[layer_freeze] WARNING: could not detect model.layers, skipping freeze")
+            else:
+                trainable_ids = set()
+                extra_prefixes = []  # non-layer components (embed, norm, lm_head)
+                for token in str(train_layer_ids_cfg).split(","):
+                    token = token.strip()
+                    if token == "" or token == "full":
+                        continue
+                    elif token == "first":
+                        trainable_ids.add(0)
+                    elif token == "middle":
+                        trainable_ids.add(total_layers // 2)
+                    elif token == "last":
+                        trainable_ids.add(total_layers - 1)
+                    elif token == "embed":
+                        extra_prefixes.append("model.embed_tokens")
+                    elif token == "norm":
+                        extra_prefixes.append("model.norm")
+                    elif token == "lm_head":
+                        extra_prefixes.append("lm_head")
+                    else:
+                        trainable_ids.add(int(token))
+                trainable_prefixes = tuple(
+                    [f"model.layers.{i}." for i in trainable_ids] + extra_prefixes
+                )
+                frozen_count = trainable_count = 0
+                for name, p in actor_module.named_parameters():
+                    if trainable_prefixes and any(name.startswith(pfx) for pfx in trainable_prefixes):
+                        p.requires_grad_(True)
+                        trainable_count += 1
+                    else:
+                        p.requires_grad_(False)
+                        frozen_count += 1
+                # Mixed requires_grad across the module needs use_orig_params=True
+                # so FSDP does not pack frozen+trainable params into one FlatParameter.
+                use_orig_params_override = True
+                if self.rank == 0:
+                    print(
+                        f"[layer_freeze] total_layers={total_layers}, "
+                        f"trainable_layers={sorted(trainable_ids)}, extra={extra_prefixes}, "
+                        f"frozen_params={frozen_count}, trainable_params={trainable_count}"
+                    )
+
         if self.rank == 0:
             print_model_size(actor_module)
 
@@ -320,7 +379,7 @@ class ActorRolloutRefWorker(Worker):
                 actor_module,
                 cpu_offload=cpu_offload,
                 param_init_fn=init_fn,
-                use_orig_params=False,
+                use_orig_params=use_orig_params_override or False,
                 auto_wrap_policy=auto_wrap_policy,
                 device_id=get_torch_device().current_device(),
                 sharding_strategy=sharding_strategy,  # zero3
