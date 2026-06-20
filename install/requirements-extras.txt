@@ -1,0 +1,24 @@
+# Extra deps for ALFworld + GIGPO training on top of verl's pyproject.toml core.
+# Install with:
+#   pip install -r install/requirements-extras.txt
+#
+# Notes:
+#   - vllm + flash-attn + verl[-e] must be installed BEFORE this file (see
+#     setup_verl_agent_env.sh) — those need special flags (--no-build-isolation,
+#     --no-cache-dir) that don't belong in a flat requirements file.
+#   - textworld is pulled in transitively by alfworld; pinning it here makes
+#     the resolver lock the version we tested against.
+
+# ALFworld environment + game loader
+alfworld==0.4.2
+textworld==1.7.0
+
+# Gym API surface that ALFworld + verl-agent's env_manager expect
+gymnasium==0.29.1
+
+# stable-baselines3 — alfworld's vec env wrappers import this even when
+# unused, so keeping it pinned avoids import-time crashes.
+stable-baselines3==2.6.0
+
+# huggingface_hub — used by our preprocessing + model download helpers
+huggingface_hub>=0.27.0

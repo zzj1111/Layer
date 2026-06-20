@@ -22,14 +22,30 @@ set -euo pipefail
 
 # ---- defaults ------------------------------------------------------------
 GPUS="${GPUS:-0,1,2,3}"                       # local 4xH200; server can set 0..7
-MODEL_PATH="${MODEL_PATH:-/mnt/data1/zha00175/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots}"
-# resolve glob for HF cache (use first snapshot or HF repo name as fallback)
+
+# ---- model selector (1.5B is paper default; 3B is our extension) ---------
+SIZE="${SIZE:-1.5B}"                          # 1.5B (paper) or 3B
+case "$SIZE" in
+    1.5B)
+        DEFAULT_HF_REPO="Qwen/Qwen2.5-1.5B-Instruct"
+        DEFAULT_TAG="Qwen2.5-1.5B-Instruct"
+        DEFAULT_HF_CACHE="/home/zha00175/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots"
+        ;;
+    3B)
+        DEFAULT_HF_REPO="Qwen/Qwen2.5-3B-Instruct"
+        DEFAULT_TAG="Qwen2.5-3B-Instruct"
+        DEFAULT_HF_CACHE="/mnt/data1/zha00175/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots"
+        ;;
+    *)
+        echo "SIZE must be 1.5B or 3B (got: $SIZE)" >&2; exit 1 ;;
+esac
+MODEL_PATH="${MODEL_PATH:-$DEFAULT_HF_CACHE}"
 if [[ -d "$MODEL_PATH" ]]; then
     snap=$(ls -d "$MODEL_PATH"/*/ 2>/dev/null | head -1 || true)
     [ -n "$snap" ] && MODEL_PATH="${snap%/}"
 fi
-MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-3B-Instruct}"
-MODEL_TAG="${MODEL_TAG:-Qwen2.5-3B-Instruct}"
+[[ -d "$MODEL_PATH" ]] || MODEL_PATH="$DEFAULT_HF_REPO"
+MODEL_TAG="${MODEL_TAG:-$DEFAULT_TAG}"
 
 ENGINE="${ENGINE:-vllm}"
 CKPT_ROOT="${CKPT_ROOT:-/mnt/data1/zha00175/ckpts_alfworld}"
@@ -44,6 +60,19 @@ MAX_PROMPT="${MAX_PROMPT:-2048}"
 MAX_RESP="${MAX_RESP:-512}"
 GIGPO_MODE="${GIGPO_MODE:-mean_std_norm}"
 MAX_STEPS="${MAX_STEPS:-50}"
+
+# Batch defaults: 1.5B uses paper defaults (mini=256, micro=32); 3B halves due to VRAM
+if [[ "$SIZE" == "1.5B" ]]; then
+    MINI_BATCH="${MINI_BATCH:-256}"
+    MICRO_BATCH="${MICRO_BATCH:-32}"
+    LOG_PROB_MICRO="${LOG_PROB_MICRO:-32}"
+    GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.55}"
+else
+    MINI_BATCH="${MINI_BATCH:-128}"
+    MICRO_BATCH="${MICRO_BATCH:-16}"
+    LOG_PROB_MICRO="${LOG_PROB_MICRO:-16}"
+    GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.55}"
+fi
 
 NUM_CPUS_PER_ENV="${NUM_CPUS_PER_ENV:-0.1}"
 
@@ -187,9 +216,10 @@ run_one() {
     cat <<EOF
 ============================================================
   GIGPO + ALFworld 16K  —  $EXP_NAME
-  Model         : $MODEL_PATH
+  Model         : $MODEL_PATH  ($SIZE)
   GPUs          : $GPUS  (${NGPUS} GPUs)
   group_size    : $GROUP_SIZE   train_batch: $TRAIN_BATCH   val_batch: $VAL_BATCH
+  mini/micro    : $MINI_BATCH / $MICRO_BATCH per gpu   log_prob_micro: $LOG_PROB_MICRO
   lr            : $LR (constant)   max_resp: $MAX_RESP   max_steps: $MAX_STEPS
   algorithm     : GIGPO (mode=$GIGPO_MODE)
   layer training: ${setting:-full (all params)}
@@ -216,24 +246,24 @@ EOF
         actor_rollout_ref.model.path="$MODEL_PATH" \
         actor_rollout_ref.actor.optim.lr=$LR \
         actor_rollout_ref.model.use_remove_padding=True \
-        actor_rollout_ref.actor.ppo_mini_batch_size=128 \
-        actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=16 \
+        actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH \
+        actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=$MICRO_BATCH \
         actor_rollout_ref.actor.use_kl_loss=True \
         actor_rollout_ref.actor.kl_loss_coef=0.01 \
         actor_rollout_ref.actor.kl_loss_type=low_var_kl \
         actor_rollout_ref.model.enable_gradient_checkpointing=True \
         actor_rollout_ref.actor.fsdp_config.param_offload=False \
         actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
-        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=16 \
+        actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=$LOG_PROB_MICRO \
         actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP \
         actor_rollout_ref.rollout.name=$ENGINE \
-        actor_rollout_ref.rollout.gpu_memory_utilization=0.55 \
+        actor_rollout_ref.rollout.gpu_memory_utilization=$GPU_MEM_UTIL \
         actor_rollout_ref.rollout.enable_chunked_prefill=False \
         actor_rollout_ref.rollout.enforce_eager=False \
         actor_rollout_ref.rollout.free_cache_engine=False \
         actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
         actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-        actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
+        actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=$LOG_PROB_MICRO \
         actor_rollout_ref.ref.fsdp_config.param_offload=True \
         actor_rollout_ref.actor.use_invalid_action_penalty=True \
         actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
