@@ -18,6 +18,17 @@
 #   bash run_alfworld_gigpo_3b_layer_tmux.sh                       # full RL, fresh
 #   bash run_alfworld_gigpo_3b_layer_tmux.sh --layer 17            # layer 17 only
 #   bash run_alfworld_gigpo_3b_layer_tmux.sh --layers "0..35" --part 1/4   # node 1 of 4 sweep
+#
+# Server example (3B, 8 cards, venv, custom paths):
+#   cd /code-fsx/.../verl_agent_layer
+#   source /scratch/.../verl-alf/bin/activate
+#   export PYTHON_BIN="$(command -v python)"
+#   export MODEL_SIZE=3B
+#   export MODEL_PATH=/code-fsx/.../Qwen2.5-3B-Instruct      # direct dir, has config.json
+#   export CKPT_ROOT=/checkpoints/.../alf
+#   export WANDB_MODE=offline WANDB_DIR=$CKPT_ROOT/wandb_offline
+#   export GPUS=0,1,2,3,4,5,6,7
+#   bash examples/gigpo_trainer/run_alfworld_gigpo_3b_layer_tmux.sh --no-tmux
 set -euo pipefail
 
 # ---- defaults ------------------------------------------------------------
@@ -42,17 +53,36 @@ case "$MODEL_SIZE" in
         echo "SIZE must be 1.5B or 3B (got: $MODEL_SIZE)" >&2; exit 1 ;;
 esac
 MODEL_PATH="${MODEL_PATH:-$DEFAULT_HF_CACHE}"
-if [[ -d "$MODEL_PATH" ]]; then
+# Resolution:
+#   1. If MODEL_PATH/config.json exists, use MODEL_PATH directly (server case:
+#      user pre-downloaded to /scratch/.../Qwen2.5-3B-Instruct).
+#   2. If MODEL_PATH is the HF cache "snapshots" dir, descend into first
+#      hash subdir (local case: $HOME/.cache/huggingface/.../snapshots).
+#   3. Fall back to HF repo name (will trigger online download).
+if [[ -f "$MODEL_PATH/config.json" ]]; then
+    :    # already a valid model dir
+elif [[ -d "$MODEL_PATH" ]]; then
     snap=$(ls -d "$MODEL_PATH"/*/ 2>/dev/null | head -1 || true)
-    [ -n "$snap" ] && MODEL_PATH="${snap%/}"
+    if [[ -n "$snap" && -f "${snap%/}/config.json" ]]; then
+        MODEL_PATH="${snap%/}"
+    else
+        MODEL_PATH="$DEFAULT_HF_REPO"
+    fi
+else
+    MODEL_PATH="$DEFAULT_HF_REPO"
 fi
-[[ -d "$MODEL_PATH" ]] || MODEL_PATH="$DEFAULT_HF_REPO"
 MODEL_TAG="${MODEL_TAG:-$DEFAULT_TAG}"
 
 ENGINE="${ENGINE:-vllm}"
+# CKPT_ROOT default is local dev path; servers MUST export to a persistent
+# location (e.g. /checkpoints/.../alf).
 CKPT_ROOT="${CKPT_ROOT:-/mnt/data1/zha00175/ckpts_alfworld}"
 WANDB_PROJECT="${WANDB_PROJECT:-verl_agent_alfworld}"
 WANDB_MODE="${WANDB_MODE:-offline}"
+# WANDB_DIR (offline run location). If unset, wandb defaults to ./wandb/
+WANDB_DIR="${WANDB_DIR:-$CKPT_ROOT/wandb_offline}"
+mkdir -p "$WANDB_DIR" 2>/dev/null || true
+export WANDB_DIR WANDB_MODE WANDB_PROJECT
 
 EPOCHS="${EPOCHS:-150}"
 TRAIN_BATCH="${TRAIN_BATCH:-16}"
@@ -78,7 +108,16 @@ fi
 
 NUM_CPUS_PER_ENV="${NUM_CPUS_PER_ENV:-0.1}"
 
-# conda + python (local default; server can override via env)
+# rollout TP: default 1 (paper uses 2, but 1 lets us scale group_size with
+# rollout_dp = NGPUS instead of NGPUS/2). Override with ROLLOUT_TP env.
+ROLLOUT_TP="${ROLLOUT_TP:-1}"
+
+# Python env. Two supported patterns:
+#   (a) conda env  — set CONDA_INIT + CONDA_ENV_PATH (script will activate
+#       inside tmux). PYTHON_BIN auto-derives from CONDA_ENV_PATH.
+#   (b) venv  — export PYTHON_BIN directly and run with --no-tmux. Conda vars
+#       still need to be set to SOMETHING for the tmux-launch fallback, but
+#       won't be touched if --no-tmux is used.
 CONDA_INIT="${CONDA_INIT:-/mnt/data1/zha00175/miniconda/bin/activate}"
 CONDA_ENV_PATH="${CONDA_ENV_PATH:-/mnt/data1/zha00175/miniconda/envs/verl}"
 PYTHON_BIN="${PYTHON_BIN:-$CONDA_ENV_PATH/bin/python}"
@@ -230,9 +269,9 @@ run_one() {
 ============================================================
 EOF
 
-    # rollout TP: default 1 (paper uses 2, but 1 lets us scale group_size with
-    # rollout_dp = NGPUS instead of NGPUS/2). Override with ROLLOUT_TP env.
-    local ROLLOUT_TP="${ROLLOUT_TP:-1}"
+    # rollout TP: ROLLOUT_TP is set at top-of-file defaults; this is a no-op
+    # placeholder so the line numbering / comment stays meaningful.
+    local _unused=0
 
     $PYTHON_BIN -m verl.trainer.main_ppo \
         algorithm.adv_estimator=gigpo \
