@@ -21,11 +21,13 @@
 set -euo pipefail
 
 # ---- defaults ------------------------------------------------------------
-GPUS="${GPUS:-0,1,2,3}"                       # local 4xH200; server can set 0..7
+GPUS="${GPUS:-0,1,2,3,4,5,6,7}"               # default 8 cards; override locally
 
 # ---- model selector (1.5B is paper default; 3B is our extension) ---------
-SIZE="${SIZE:-1.5B}"                          # 1.5B (paper) or 3B
-case "$SIZE" in
+MODEL_SIZE="${MODEL_SIZE:-1.5B}"                    # 1.5B (paper) or 3B
+                                                    # NOTE: do NOT name this SIZE — conda
+                                                    # binutils activation script clobbers it.
+case "$MODEL_SIZE" in
     1.5B)
         DEFAULT_HF_REPO="Qwen/Qwen2.5-1.5B-Instruct"
         DEFAULT_TAG="Qwen2.5-1.5B-Instruct"
@@ -37,7 +39,7 @@ case "$SIZE" in
         DEFAULT_HF_CACHE="/mnt/data1/zha00175/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct/snapshots"
         ;;
     *)
-        echo "SIZE must be 1.5B or 3B (got: $SIZE)" >&2; exit 1 ;;
+        echo "SIZE must be 1.5B or 3B (got: $MODEL_SIZE)" >&2; exit 1 ;;
 esac
 MODEL_PATH="${MODEL_PATH:-$DEFAULT_HF_CACHE}"
 if [[ -d "$MODEL_PATH" ]]; then
@@ -62,7 +64,7 @@ GIGPO_MODE="${GIGPO_MODE:-mean_std_norm}"
 MAX_STEPS="${MAX_STEPS:-50}"
 
 # Batch defaults: 1.5B uses paper defaults (mini=256, micro=32); 3B halves due to VRAM
-if [[ "$SIZE" == "1.5B" ]]; then
+if [[ "$MODEL_SIZE" == "1.5B" ]]; then
     MINI_BATCH="${MINI_BATCH:-256}"
     MICRO_BATCH="${MICRO_BATCH:-32}"
     LOG_PROB_MICRO="${LOG_PROB_MICRO:-32}"
@@ -164,7 +166,7 @@ if [ "$NO_TMUX" = "false" ] && [ -z "${VERL_NO_TMUX:-}" ]; then
     [[ "$FULL_FLAG" == "true" ]] && FULL_ARGS="$FULL_ARGS --full"
     [[ -n "$PART"   ]] && FULL_ARGS="$FULL_ARGS --part $(printf '%q' "$PART")"
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
-    ENV_INJECT="LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS"
+    ENV_INJECT="MODEL_SIZE=$MODEL_SIZE LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS MINI_BATCH=$MINI_BATCH MICRO_BATCH=$MICRO_BATCH LOG_PROB_MICRO=$LOG_PROB_MICRO GPU_MEM_UTIL=$GPU_MEM_UTIL"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -216,21 +218,21 @@ run_one() {
     cat <<EOF
 ============================================================
   GIGPO + ALFworld 16K  —  $EXP_NAME
-  Model         : $MODEL_PATH  ($SIZE)
+  Model         : $MODEL_PATH  ($MODEL_SIZE)
   GPUs          : $GPUS  (${NGPUS} GPUs)
   group_size    : $GROUP_SIZE   train_batch: $TRAIN_BATCH   val_batch: $VAL_BATCH
   mini/micro    : $MINI_BATCH / $MICRO_BATCH per gpu   log_prob_micro: $LOG_PROB_MICRO
   lr            : $LR (constant)   max_resp: $MAX_RESP   max_steps: $MAX_STEPS
-  algorithm     : GIGPO (mode=$GIGPO_MODE)
+  algorithm     : GIGPO (mode=$GIGPO_MODE)   rollout TP: $ROLLOUT_TP
   layer training: ${setting:-full (all params)}
   total_epochs  : $EPOCHS
   ckpts         : $CKPTS_DIR
 ============================================================
 EOF
 
-    # rollout TP: 2 for 3B; can adjust for memory pressure
-    local ROLLOUT_TP=2
-    [ "$NGPUS" -ge 4 ] || ROLLOUT_TP=1
+    # rollout TP: default 1 (paper uses 2, but 1 lets us scale group_size with
+    # rollout_dp = NGPUS instead of NGPUS/2). Override with ROLLOUT_TP env.
+    local ROLLOUT_TP="${ROLLOUT_TP:-1}"
 
     $PYTHON_BIN -m verl.trainer.main_ppo \
         algorithm.adv_estimator=gigpo \
