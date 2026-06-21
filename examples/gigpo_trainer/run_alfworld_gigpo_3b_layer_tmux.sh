@@ -224,7 +224,7 @@ fi
 # ---- env setup -----------------------------------------------------------
 export CUDA_VISIBLE_DEVICES=$GPUS
 NGPUS=$(echo "$GPUS" | tr ',' '\n' | wc -l)
-export VLLM_ATTENTION_BACKEND=XFORMERS
+export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-XFORMERS}"
 export WANDB_MODE
 mkdir -p "$CKPT_ROOT"
 
@@ -307,6 +307,7 @@ EOF
         actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
         actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=$LOG_PROB_MICRO \
         actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP \
+        +actor_rollout_ref.rollout.engine_kwargs.vllm.block_size=256 \
         actor_rollout_ref.rollout.name=$ENGINE \
         actor_rollout_ref.rollout.gpu_memory_utilization=$GPU_MEM_UTIL \
         actor_rollout_ref.rollout.enable_chunked_prefill=False \
