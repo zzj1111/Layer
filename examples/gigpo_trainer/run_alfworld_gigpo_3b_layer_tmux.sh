@@ -112,6 +112,14 @@ NUM_CPUS_PER_ENV="${NUM_CPUS_PER_ENV:-0.1}"
 # rollout_dp = NGPUS instead of NGPUS/2). Override with ROLLOUT_TP env.
 ROLLOUT_TP="${ROLLOUT_TP:-1}"
 
+# Checkpointing: paper sets save_freq=-1 (never save). We default to 1 (save
+# every epoch) so training is resumable. max_actor_ckpt_to_keep limits disk
+# usage — only the latest N actors keep their FSDP+HF weights; older steps
+# keep only data.pt (a few KB) so resume from any step still works.
+SAVE_FREQ="${SAVE_FREQ:-1}"
+MAX_ACTOR_CKPT="${MAX_ACTOR_CKPT:-3}"
+TEST_FREQ="${TEST_FREQ:-5}"
+
 # Python env. Two supported patterns:
 #   (a) conda env  — set CONDA_INIT + CONDA_ENV_PATH (script will activate
 #       inside tmux). PYTHON_BIN auto-derives from CONDA_ENV_PATH.
@@ -205,7 +213,7 @@ if [ "$NO_TMUX" = "false" ] && [ -z "${VERL_NO_TMUX:-}" ]; then
     [[ "$FULL_FLAG" == "true" ]] && FULL_ARGS="$FULL_ARGS --full"
     [[ -n "$PART"   ]] && FULL_ARGS="$FULL_ARGS --part $(printf '%q' "$PART")"
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
-    ENV_INJECT="MODEL_SIZE=$MODEL_SIZE LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS MINI_BATCH=$MINI_BATCH MICRO_BATCH=$MICRO_BATCH LOG_PROB_MICRO=$LOG_PROB_MICRO GPU_MEM_UTIL=$GPU_MEM_UTIL"
+    ENV_INJECT="MODEL_SIZE=$MODEL_SIZE LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS MINI_BATCH=$MINI_BATCH MICRO_BATCH=$MICRO_BATCH LOG_PROB_MICRO=$LOG_PROB_MICRO GPU_MEM_UTIL=$GPU_MEM_UTIL SAVE_FREQ=$SAVE_FREQ MAX_ACTOR_CKPT=$MAX_ACTOR_CKPT TEST_FREQ=$TEST_FREQ"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -265,6 +273,7 @@ run_one() {
   algorithm     : GIGPO (mode=$GIGPO_MODE)   rollout TP: $ROLLOUT_TP
   layer training: ${setting:-full (all params)}
   total_epochs  : $EPOCHS
+  save_freq     : $SAVE_FREQ epoch(s)   keep latest: $MAX_ACTOR_CKPT actor(s)   test_freq: $TEST_FREQ
   ckpts         : $CKPTS_DIR
 ============================================================
 EOF
@@ -325,8 +334,9 @@ EOF
         "trainer.default_local_dir='$CKPTS_DIR'" \
         trainer.n_gpus_per_node=$NGPUS \
         trainer.nnodes=1 \
-        trainer.save_freq=-1 \
-        trainer.test_freq=5 \
+        trainer.save_freq=$SAVE_FREQ \
+        trainer.max_actor_ckpt_to_keep=$MAX_ACTOR_CKPT \
+        trainer.test_freq=$TEST_FREQ \
         trainer.total_epochs=$EPOCHS \
         trainer.resume_mode=auto \
         trainer.val_before_train=True
