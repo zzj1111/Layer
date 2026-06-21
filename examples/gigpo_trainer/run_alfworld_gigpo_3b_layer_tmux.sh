@@ -112,12 +112,13 @@ NUM_CPUS_PER_ENV="${NUM_CPUS_PER_ENV:-0.1}"
 # rollout_dp = NGPUS instead of NGPUS/2). Override with ROLLOUT_TP env.
 ROLLOUT_TP="${ROLLOUT_TP:-1}"
 
-# Checkpointing: paper sets save_freq=-1 (never save). We default to 1 (save
-# every epoch) so training is resumable. max_actor_ckpt_to_keep limits disk
-# usage — only the latest N actors keep their FSDP+HF weights; older steps
-# keep only data.pt (a few KB) so resume from any step still works.
-SAVE_FREQ="${SAVE_FREQ:-1}"
-MAX_ACTOR_CKPT="${MAX_ACTOR_CKPT:-3}"
+# Checkpointing: paper sets save_freq=-1 (never save). We default to "save
+# only the final ckpt" — save_freq = total_epochs means the modulo triggers
+# exactly once at the last epoch; max_actor_ckpt_to_keep=1 keeps just that
+# one actor on disk. Override SAVE_FREQ for intermediate ckpts (e.g. =10
+# saves every 10 epochs and keeps the latest MAX_ACTOR_CKPT of them).
+SAVE_FREQ="${SAVE_FREQ:-$EPOCHS}"
+MAX_ACTOR_CKPT="${MAX_ACTOR_CKPT:-1}"
 TEST_FREQ="${TEST_FREQ:-5}"
 
 # Python env. Two supported patterns:
