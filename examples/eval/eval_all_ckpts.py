@@ -115,6 +115,7 @@ def run_one_eval(ckpt: Path, save_dir: Path, args):
     env["TEMPERATURE"] = str(args.temperature)
     env["TOP_P"] = str(args.top_p)
     env["N_SAMPLES"] = str(args.n_samples)
+    env["N_SAMPLES_OVERRIDES"] = args.n_samples_overrides
     # Propagate this script's python to bash subprocess so it uses the same env
     # (run_eval_dp8.sh's PY resolution would otherwise pick $CONDA_PREFIX/bin/python
     # which can be `base` instead of the env that has fire/vllm/etc.)
@@ -241,6 +242,8 @@ def main():
     p.add_argument("--top_p", type=float, default=1.0)
     p.add_argument("--n_samples", type=int, default=1,
                    help="samples per prompt (pass@N estimation)")
+    p.add_argument("--n_samples_overrides", default="",
+                   help="per-task n override, e.g. 'aime:8,aime25:8' (other tasks use --n_samples)")
     p.add_argument("--tasks", default="aime,amc,math,minerva,olympiad_bench,aime25")
     p.add_argument("--wandb_project", default="drgrpo_eval")
     p.add_argument("--exp_filter", default=None, help="Regex to filter exp_dir names")

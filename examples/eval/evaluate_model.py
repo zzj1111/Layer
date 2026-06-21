@@ -79,6 +79,7 @@ def main(
     max_tokens: int = 3000,
     max_model_len: int = 4096,  # VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 for longer ones.
     n_samples: int = 1,
+    n_samples_overrides: str = "",  # per-task n, e.g. "aime:8,aime25:8" (other tasks use n_samples)
     max_test: int = 999999,
     save: bool = False,
     tensor_parallel_size: int = 1,
@@ -202,6 +203,16 @@ def main(
     else:
         raise ValueError
 
+    # per-task n_samples overrides, e.g. "aime:8,aime25:8" -> those tasks use n=8; others use n_samples.
+    n_overrides = {}
+    for tok in n_samples_overrides.split(","):
+        tok = tok.strip()
+        if tok and ":" in tok:
+            t, v = tok.rsplit(":", 1)
+            n_overrides[t.strip()] = int(v.strip())
+    if n_overrides:
+        print(f"per-task n_samples overrides: {n_overrides} (default n={n_samples})")
+
     results = {}
     avg_lens = {}
     max_lens = {}
@@ -219,14 +230,19 @@ def main(
         orig_idx = list(range(shard_idx, len(prompts_all), shard_total))
 
         prompts = list(map(apply_template, prompts))
-        print("inference for ", task_name)
-        outputs = model.generate(prompts, sampling_params)
+        task_n = n_overrides.get(task_name, n_samples)
+        task_sampling_params = vllm.SamplingParams(
+            n=task_n, temperature=temperature, top_p=top_p,
+            max_tokens=max_tokens, logprobs=2, seed=int(time.time_ns()),
+        )
+        print(f"inference for {task_name}  (n={task_n})")
+        outputs = model.generate(prompts, task_sampling_params)
         batch_scores = []
         batch_formatted = []
         batch_lengths = []
         for k in range(len(outputs)):
             output = outputs[k]
-            gt_repeated = [targets[k]] * sampling_params.n
+            gt_repeated = [targets[k]] * task_n
             rewards, infos = [], []
             for model_output, gt in zip([o.text for o in output.outputs], gt_repeated):
                 info, r = math_reward_fn(model_output, gt, fast=False)

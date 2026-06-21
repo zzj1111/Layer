@@ -22,6 +22,7 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-34816}"
 TEMPERATURE="${TEMPERATURE:-0}"     # >0 enables sampling; each python proc gets time-based seed
 TOP_P="${TOP_P:-1}"
 N_SAMPLES="${N_SAMPLES:-1}"
+N_SAMPLES_OVERRIDES="${N_SAMPLES_OVERRIDES:-}"   # per-task n override, e.g. "aime:8,aime25:8" (others use N_SAMPLES)
 TASKS="${TASKS:-[\"aime\",\"amc\",\"math\",\"minerva\",\"olympiad_bench\",\"aime25\"]}"
 DATASET="${DATASET:-data/evaluation_suite_v2}"
 # Python resolution priority: PY > PYTHON_BIN > $CONDA_PREFIX/bin/python > $VIRTUAL_ENV/bin/python > `which python`
@@ -69,6 +70,7 @@ for i in $(seq 0 $((N_SHARD - 1))); do
         --temperature "$TEMPERATURE" --top_p "$TOP_P" \
         --max_tokens "$MAX_TOKENS" --max_model_len "$MAX_MODEL_LEN" \
         --n_samples "$N_SAMPLES" \
+        --n_samples_overrides "${N_SAMPLES_OVERRIDES:-}" \
         --tensor_parallel_size 1 \
         --gpu_memory_utilization 0.85 \
         --shard "${i}/${N_SHARD}" \
