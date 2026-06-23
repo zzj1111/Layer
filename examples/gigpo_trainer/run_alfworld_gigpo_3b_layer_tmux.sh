@@ -121,6 +121,16 @@ SAVE_FREQ="${SAVE_FREQ:-$EPOCHS}"
 MAX_ACTOR_CKPT="${MAX_ACTOR_CKPT:-1}"
 TEST_FREQ="${TEST_FREQ:-5}"
 
+# ALFworld val split:
+#   "seen"   = eval_in_distribution     (242 tasks, verl-agent default, paper默认假设)
+#   "unseen" = eval_out_of_distribution  (85 tasks, harder OOD eval)
+EVAL_SPLIT="${EVAL_SPLIT:-seen}"
+case "$EVAL_SPLIT" in
+    seen)   ALF_EVAL_DATASET="eval_in_distribution" ;;
+    unseen) ALF_EVAL_DATASET="eval_out_of_distribution" ;;
+    *) echo "EVAL_SPLIT must be seen|unseen (got: $EVAL_SPLIT)" >&2; exit 1 ;;
+esac
+
 # Python env. Two supported patterns:
 #   (a) conda env  — set CONDA_INIT + CONDA_ENV_PATH (script will activate
 #       inside tmux). PYTHON_BIN auto-derives from CONDA_ENV_PATH.
@@ -214,7 +224,7 @@ if [ "$NO_TMUX" = "false" ] && [ -z "${VERL_NO_TMUX:-}" ]; then
     [[ "$FULL_FLAG" == "true" ]] && FULL_ARGS="$FULL_ARGS --full"
     [[ -n "$PART"   ]] && FULL_ARGS="$FULL_ARGS --part $(printf '%q' "$PART")"
     [[ "$RESUME" == "true" ]] && FULL_ARGS="$FULL_ARGS --resume"
-    ENV_INJECT="MODEL_SIZE=$MODEL_SIZE LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS MINI_BATCH=$MINI_BATCH MICRO_BATCH=$MICRO_BATCH LOG_PROB_MICRO=$LOG_PROB_MICRO GPU_MEM_UTIL=$GPU_MEM_UTIL SAVE_FREQ=$SAVE_FREQ MAX_ACTOR_CKPT=$MAX_ACTOR_CKPT TEST_FREQ=$TEST_FREQ"
+    ENV_INJECT="MODEL_SIZE=$MODEL_SIZE LR=$LR EPOCHS=$EPOCHS GROUP_SIZE=$GROUP_SIZE TRAIN_BATCH=$TRAIN_BATCH MAX_RESP=$MAX_RESP MAX_PROMPT=$MAX_PROMPT MAX_STEPS=$MAX_STEPS MINI_BATCH=$MINI_BATCH MICRO_BATCH=$MICRO_BATCH LOG_PROB_MICRO=$LOG_PROB_MICRO GPU_MEM_UTIL=$GPU_MEM_UTIL SAVE_FREQ=$SAVE_FREQ MAX_ACTOR_CKPT=$MAX_ACTOR_CKPT TEST_FREQ=$TEST_FREQ EVAL_SPLIT=$EVAL_SPLIT"
     tmux new-session -d -s "$TMUX_SESSION" \
         "source $CONDA_INIT && conda activate $CONDA_ENV_PATH && cd $PROJ_DIR && $ENV_INJECT bash $SCRIPT_DIR/$SCRIPT_NAME $FULL_ARGS; exec bash"
     echo "Tmux '$TMUX_SESSION' started.  Attach: tmux attach -t $TMUX_SESSION"
@@ -277,6 +287,7 @@ run_one() {
   layer training: ${setting:-full (all params)}
   total_epochs  : $EPOCHS
   save_freq     : $SAVE_FREQ epoch(s)   keep latest: $MAX_ACTOR_CKPT actor(s)   test_freq: $TEST_FREQ
+  val split     : $EVAL_SPLIT ($ALF_EVAL_DATASET)
   ckpts         : $CKPTS_DIR
 ============================================================
 EOF
@@ -326,6 +337,7 @@ EOF
         algorithm.gigpo.mode=$GIGPO_MODE \
         env.env_name=alfworld/AlfredTWEnv \
         env.seed=0 \
+        +env.alfworld.eval_dataset=$ALF_EVAL_DATASET \
         env.max_steps=$MAX_STEPS \
         env.rollout.n=$GROUP_SIZE \
         env.resources_per_worker.num_cpus=$NUM_CPUS_PER_ENV \
